@@ -11,17 +11,9 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Skeleton } from "@/components/ui/skeleton"
-import { getHydrationToday, getMacrosForDate } from "@/lib/api-client"
-import {
-  ACTIVE_ROUTINE,
-  HYDRATION_GOAL_ML,
-  MACRO_TARGETS,
-  RECENT_SESSIONS,
-  currentCycleStep,
-  describeSchedule,
-  exerciseById,
-  getCurrentDay,
-} from "@/lib/stub-data"
+import { getHydrationToday, getMacrosForDate, getSettings, getRoutine } from "@/lib/api-client"
+import type { UserSettings, Routine } from "shared"
+import { RECENT_SESSIONS, currentCycleStep, describeSchedule, exerciseById, getCurrentDay } from "@/lib/stub-data"
 
 function greeting() {
   const hour = new Date().getHours()
@@ -32,10 +24,6 @@ function greeting() {
 
 export function Today() {
   const navigate = useNavigate()
-  const hasActiveRoutine = ACTIVE_ROUTINE.days.length > 0
-  const cycleStep = currentCycleStep()
-  const today = getCurrentDay(ACTIVE_ROUTINE, cycleStep)
-  const dayPosition = (cycleStep % ACTIVE_ROUTINE.days.length) + 1
   const lastSession = RECENT_SESSIONS[0]
   const todayDate = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(
     new Date(),
@@ -43,6 +31,9 @@ export function Today() {
 
   const [hydrationMl, setHydrationMl] = React.useState<number | null>(null)
   const [proteinG, setProteinG] = React.useState<number | null>(null)
+  const [settings, setSettings] = React.useState<UserSettings | null>(null)
+  // undefined = still loading, null = confirmed no routine exists yet
+  const [routine, setRoutine] = React.useState<Routine | null | undefined>(undefined)
 
   React.useEffect(() => {
     getHydrationToday()
@@ -51,7 +42,17 @@ export function Today() {
     getMacrosForDate()
       .then((res) => setProteinG(res.entry?.protein ?? 0))
       .catch(() => toast.error("Couldn't load today's macros"))
+    getSettings()
+      .then(setSettings)
+      .catch(() => toast.error("Couldn't load your settings"))
+    getRoutine()
+      .then((res) => setRoutine(res.routine))
+      .catch(() => setRoutine(null))
   }, [])
+
+  const cycleStep = currentCycleStep()
+  const today = routine ? getCurrentDay(routine, cycleStep) : null
+  const dayPosition = routine ? (cycleStep % routine.days.length) + 1 : 0
 
   return (
     <div>
@@ -66,7 +67,9 @@ export function Today() {
 
         <PwaInstallCard />
 
-        {hasActiveRoutine ? (
+        {routine === undefined ? (
+          <Skeleton className="h-40 w-full rounded-xl" />
+        ) : routine && today ? (
           <Card className="overflow-hidden border-primary/25 py-0">
             <CardContent className="space-y-4 p-4">
               <div className="flex items-center justify-between">
@@ -77,7 +80,7 @@ export function Today() {
                     {today.exercises.reduce((n, e) => n + e.targetSets, 0)} total sets · ~50 min
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Day {dayPosition} of {ACTIVE_ROUTINE.days.length} · {describeSchedule(ACTIVE_ROUTINE.schedule)}
+                    Day {dayPosition} of {routine.days.length} · {describeSchedule(routine.schedule)}
                   </p>
                 </div>
               </div>
@@ -111,20 +114,20 @@ export function Today() {
           <Link to="/log">
             <Card className="h-full py-3.5 transition-colors hover:bg-muted/40">
               <CardContent className="space-y-2 px-3.5">
-                {hydrationMl == null ? (
+                {hydrationMl == null || settings == null ? (
                   <Skeleton className="h-20 w-full" />
                 ) : (
                   <>
                     <div className="flex items-center justify-between">
                       <Droplets className="size-4 text-primary" />
                       <span className="text-xs text-muted-foreground">
-                        {Math.round((hydrationMl / HYDRATION_GOAL_ML) * 100)}%
+                        {Math.round((hydrationMl / settings.hydrationGoalMl) * 100)}%
                       </span>
                     </div>
                     <p className="text-sm font-medium">Hydration</p>
-                    <Progress value={(hydrationMl / HYDRATION_GOAL_ML) * 100} className="h-1.5" />
+                    <Progress value={(hydrationMl / settings.hydrationGoalMl) * 100} className="h-1.5" />
                     <p className="text-xs text-muted-foreground">
-                      {(hydrationMl / 1000).toFixed(2)}L / {(HYDRATION_GOAL_ML / 1000).toFixed(1)}L
+                      {(hydrationMl / 1000).toFixed(2)}L / {(settings.hydrationGoalMl / 1000).toFixed(1)}L
                     </p>
                   </>
                 )}
@@ -134,20 +137,20 @@ export function Today() {
           <Link to="/log">
             <Card className="h-full py-3.5 transition-colors hover:bg-muted/40">
               <CardContent className="space-y-2 px-3.5">
-                {proteinG == null ? (
+                {proteinG == null || settings == null ? (
                   <Skeleton className="h-20 w-full" />
                 ) : (
                   <>
                     <div className="flex items-center justify-between">
                       <Flame className="size-4 text-primary" />
                       <span className="text-xs text-muted-foreground">
-                        {Math.round((proteinG / MACRO_TARGETS.protein) * 100)}%
+                        {Math.round((proteinG / settings.macroTargets.protein) * 100)}%
                       </span>
                     </div>
                     <p className="text-sm font-medium">Protein</p>
-                    <Progress value={(proteinG / MACRO_TARGETS.protein) * 100} className="h-1.5" />
+                    <Progress value={(proteinG / settings.macroTargets.protein) * 100} className="h-1.5" />
                     <p className="text-xs text-muted-foreground">
-                      {proteinG}g / {MACRO_TARGETS.protein}g
+                      {proteinG}g / {settings.macroTargets.protein}g
                     </p>
                   </>
                 )}

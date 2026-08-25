@@ -8,13 +8,27 @@ import { Progress } from "@/components/ui/progress"
 import { Card, CardContent } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AiDegradedAlert } from "@/components/shared/ai-degraded-alert"
+import { RoutineDaysEditor } from "@/components/shared/routine-days-editor"
+import { SplitPicker } from "@/components/routine/split-picker"
+import { SchedulePicker } from "@/components/routine/schedule-picker"
 import { useOnlineStatus } from "@/hooks/use-online-status"
+import { useApiWrite } from "@/hooks/use-api-write"
+import { useScheduleState } from "@/hooks/use-schedule-state"
 import { useAiProvider } from "@/contexts/ai-provider-context"
 import { useSession } from "@/contexts/session-context"
-import { EQUIPMENT_LABELS, type Equipment } from "@/lib/stub-data"
-import { register, ApiError } from "@/lib/api-client"
+import {
+  EQUIPMENT_LABELS,
+  SPLIT_PRESETS,
+  autofillDayExercises,
+  describeSchedule,
+  type Equipment,
+  type RoutineDay,
+  type SplitType,
+} from "@/lib/stub-data"
+import { register, saveSettings, saveRoutine, ApiError } from "@/lib/api-client"
 
-const STEPS = ["Account", "Hydration goal", "Macro target", "Equipment"]
+const STEPS = ["Account", "Hydration goal", "Macro target", "Equipment", "Split", "Schedule", "Review & edit days"]
+const [ACCOUNT, HYDRATION, MACRO, EQUIPMENT, SPLIT, SCHEDULE, REVIEW] = [0, 1, 2, 3, 4, 5, 6]
 const ALL_EQUIPMENT = Object.keys(EQUIPMENT_LABELS) as Equipment[]
 
 export function Onboarding() {
@@ -31,18 +45,45 @@ export function Onboarding() {
   const [password, setPassword] = React.useState("")
   const [accountStatus, setAccountStatus] = React.useState<"idle" | "saving" | "error">("idle")
   const [accountError, setAccountError] = React.useState("")
+
   const [hydrationGoal, setHydrationGoal] = React.useState(3000)
+
   const [macroMode, setMacroMode] = React.useState<"computed" | "manual">("computed")
   const [bodyweight, setBodyweight] = React.useState(78)
+  const [manualCalories, setManualCalories] = React.useState(2400)
+  const [manualProtein, setManualProtein] = React.useState(180)
+  const [manualCarbs, setManualCarbs] = React.useState(240)
+  const [manualFat, setManualFat] = React.useState(70)
+
   const [detectState, setDetectState] = React.useState<"idle" | "detecting" | "done">("idle")
   const [selectedEquipment, setSelectedEquipment] = React.useState<Set<Equipment>>(new Set())
 
-  const proteinTarget = Math.round(bodyweight * 2.0)
+  const [splitType, setSplitType] = React.useState<SplitType | null>(null)
+  const scheduleState = useScheduleState(4)
+  const { schedule } = scheduleState
+  const [days, setDays] = React.useState<RoutineDay[]>([])
+  const [activeDay, setActiveDay] = React.useState("")
+
+  const { status: finishStatus, run: runFinish } = useApiWrite("You're all set!")
+  const { status: skipStatus, run: runSkip } = useApiWrite("Settings saved")
+
+  // A standard bodyweight-based estimate (2.0g/kg protein, 0.8g/kg fat, 30kcal/kg total,
+  // carbs fill the remainder) — computed transparently from what was just entered, not a
+  // fixed stub every user would otherwise see regardless of their answer.
+  const computedProtein = Math.round(bodyweight * 2.0)
+  const computedFat = Math.round(bodyweight * 0.8)
+  const computedCalories = Math.round(bodyweight * 30)
+  const computedCarbs = Math.max(0, Math.round((computedCalories - computedProtein * 4 - computedFat * 9) / 4))
+
+  const macroTargets =
+    macroMode === "computed"
+      ? { calories: computedCalories, protein: computedProtein, carbs: computedCarbs, fat: computedFat }
+      : { calories: manualCalories, protein: manualProtein, carbs: manualCarbs, fat: manualFat }
 
   // useLayoutEffect (not useEffect) so this resolves before paint — otherwise a family member
   // arriving via /join would see a one-frame flash of the account-creation step.
   React.useLayoutEffect(() => {
-    if (!sessionLoading && user) setStep((s) => (s === 0 ? 1 : s))
+    if (!sessionLoading && user) setStep((s) => (s === ACCOUNT ? HYDRATION : s))
   }, [sessionLoading, user])
 
   async function createAccount() {
@@ -56,20 +97,85 @@ export function Onboarding() {
       const { user } = await register({ username, password })
       setUser(user)
       setAccountStatus("idle")
-      setStep(1)
+      setStep(HYDRATION)
     } catch (err) {
       setAccountStatus("error")
       setAccountError(err instanceof ApiError ? err.message : "Couldn't create your account — try again.")
     }
   }
 
+  function seedDays() {
+    if (!splitType) return
+    const preset = SPLIT_PRESETS.find((p) => p.id === splitType)!
+    const labels =
+      preset.dayLabels.length > 0
+        ? preset.dayLabels
+        : Array.from(
+            { length: scheduleState.scheduleMode === "weekly" ? scheduleState.daysPerWeek : schedule.mode === "rotating" ? schedule.workDays : 3 },
+            (_, i) => `Day ${i + 1}`,
+          )
+    const equipment = Array.from(selectedEquipment)
+    const seeded: RoutineDay[] = labels.map((label, i) => ({
+      id: `onboarding-day-${i + 1}`,
+      label,
+      exercises: autofillDayExercises(label, equipment),
+    }))
+    setDays(seeded)
+    setActiveDay(seeded[0]?.id ?? "")
+  }
+
+  function finishWithRoutine() {
+    if (!splitType) return
+    runFinish(async () => {
+      await saveSettings({ hydrationGoalMl: hydrationGoal, macroMode, bodyweightKg: bodyweight, macroTargets, equipment: Array.from(selectedEquipment), completeOnboarding: true })
+      await saveRoutine({
+        name: `${SPLIT_PRESETS.find((p) => p.id === splitType)?.label} — ${describeSchedule(schedule)}`,
+        splitType,
+        schedule,
+        days: days.map(({ id, label, exercises }) => ({
+          id,
+          label,
+          exercises: exercises.map(({ exerciseId, targetSets, targetReps, targetWeightKg }) => ({
+            exerciseId,
+            targetSets,
+            targetReps,
+            targetWeightKg,
+          })),
+        })),
+      })
+    }, () => navigate("/today"))
+  }
+
+  function skipWorkoutSetup() {
+    runSkip(
+      () =>
+        saveSettings({
+          hydrationGoalMl: hydrationGoal,
+          macroMode,
+          bodyweightKg: bodyweight,
+          macroTargets,
+          equipment: Array.from(selectedEquipment),
+          completeOnboarding: true,
+        }),
+      () => navigate("/today"),
+    )
+  }
+
   function next() {
-    if (step === 0) {
+    if (step === ACCOUNT) {
       void createAccount()
       return
     }
-    if (step === STEPS.length - 1) navigate("/today")
-    else setStep((s) => s + 1)
+    if (step === SCHEDULE) {
+      seedDays()
+      setStep(REVIEW)
+      return
+    }
+    if (step === REVIEW) {
+      finishWithRoutine()
+      return
+    }
+    setStep((s) => s + 1)
   }
 
   function runDetection() {
@@ -93,6 +199,8 @@ export function Onboarding() {
   // (via /join) before the effect above has a chance to bump past it.
   if (sessionLoading) return null
 
+  const isSaving = accountStatus === "saving" || finishStatus === "saving"
+
   return (
     <div className="mx-auto flex min-h-svh max-w-md flex-col px-6 py-8" style={{ paddingTop: "var(--safe-top)" }}>
       <div className="mb-6 space-y-3">
@@ -106,7 +214,7 @@ export function Onboarding() {
       </div>
 
       <div key={step} className="flex-1 space-y-5 animate-in fade-in slide-in-from-right-3 duration-200 ease-out">
-        {step === 0 && (
+        {step === ACCOUNT && (
           <div className="space-y-4">
             <h1 className="font-heading text-xl font-semibold">Create the family admin account</h1>
             <p className="text-sm text-muted-foreground">
@@ -144,7 +252,7 @@ export function Onboarding() {
           </div>
         )}
 
-        {step === 1 && (
+        {step === HYDRATION && (
           <div className="space-y-4">
             <h1 className="font-heading text-xl font-semibold">Set a daily hydration goal</h1>
             <p className="text-sm text-muted-foreground">You can change this anytime in Log → Hydration.</p>
@@ -173,7 +281,7 @@ export function Onboarding() {
           </div>
         )}
 
-        {step === 2 && (
+        {step === MACRO && (
           <div className="space-y-4">
             <h1 className="font-heading text-xl font-semibold">Set a daily protein/macro target</h1>
             <div className="flex gap-2">
@@ -207,25 +315,66 @@ export function Onboarding() {
                   />
                 </div>
                 <Card className="bg-muted/40 py-3">
-                  <CardContent className="text-sm">
-                    Protein target at 2.0 g/kg: <span className="font-semibold">{proteinTarget}g/day</span>
+                  <CardContent className="grid grid-cols-2 gap-2 text-sm">
+                    <p>
+                      Calories: <span className="font-semibold">{computedCalories}/day</span>
+                    </p>
+                    <p>
+                      Protein: <span className="font-semibold">{computedProtein}g/day</span>
+                    </p>
+                    <p>
+                      Carbs: <span className="font-semibold">{computedCarbs}g/day</span>
+                    </p>
+                    <p>
+                      Fat: <span className="font-semibold">{computedFat}g/day</span>
+                    </p>
                   </CardContent>
                 </Card>
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-3">
-                {["Calories", "Protein (g)", "Carbs (g)", "Fat (g)"].map((label) => (
-                  <div key={label} className="space-y-1.5">
-                    <Label className="text-xs">{label}</Label>
-                    <Input type="number" className="h-11 text-base" placeholder="0" />
-                  </div>
-                ))}
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Calories</Label>
+                  <Input
+                    type="number"
+                    className="h-11 text-base"
+                    value={manualCalories}
+                    onChange={(e) => setManualCalories(Number(e.target.value))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Protein (g)</Label>
+                  <Input
+                    type="number"
+                    className="h-11 text-base"
+                    value={manualProtein}
+                    onChange={(e) => setManualProtein(Number(e.target.value))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Carbs (g)</Label>
+                  <Input
+                    type="number"
+                    className="h-11 text-base"
+                    value={manualCarbs}
+                    onChange={(e) => setManualCarbs(Number(e.target.value))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Fat (g)</Label>
+                  <Input
+                    type="number"
+                    className="h-11 text-base"
+                    value={manualFat}
+                    onChange={(e) => setManualFat(Number(e.target.value))}
+                  />
+                </div>
               </div>
             )}
           </div>
         )}
 
-        {step === 3 && (
+        {step === EQUIPMENT && (
           <div className="space-y-4">
             <h1 className="font-heading text-xl font-semibold">What equipment do you have?</h1>
             <p className="text-sm text-muted-foreground">
@@ -294,29 +443,67 @@ export function Onboarding() {
             </div>
           </div>
         )}
+
+        {step === SPLIT && (
+          <div className="space-y-3">
+            <h1 className="font-heading text-xl font-semibold">Choose a starting split</h1>
+            <p className="text-sm text-muted-foreground">
+              Sets the day structure your routine starts from — fully editable afterward, and you
+              can change it anytime from Train → Routine Builder.
+            </p>
+            <SplitPicker value={splitType} onChange={setSplitType} />
+          </div>
+        )}
+
+        {step === SCHEDULE && (
+          <div className="space-y-4">
+            <h1 className="font-heading text-xl font-semibold">Schedule</h1>
+            <SchedulePicker {...scheduleState} />
+          </div>
+        )}
+
+        {step === REVIEW && (
+          <div className="space-y-4">
+            <div>
+              <h1 className="font-heading text-xl font-semibold">Review & edit days</h1>
+              <p className="text-sm text-muted-foreground">
+                {splitType && SPLIT_PRESETS.find((p) => p.id === splitType)?.label} · {describeSchedule(schedule)}
+              </p>
+            </div>
+            <RoutineDaysEditor days={days} setDays={setDays} activeDay={activeDay} onActiveDayChange={setActiveDay} />
+          </div>
+        )}
       </div>
 
       <div className="mt-8 flex gap-3">
-        {step > 0 && (
+        {step > ACCOUNT && (
           <Button variant="ghost" className="h-11" onClick={() => setStep((s) => s - 1)}>
             Back
           </Button>
         )}
-        <Button className="h-11 flex-1 text-base" onClick={next} disabled={accountStatus === "saving"}>
+        <Button className="h-11 flex-1 text-base" onClick={next} disabled={isSaving || (step === SPLIT && !splitType)}>
           {accountStatus === "saving" ? (
             <>
               <Loader2 className="size-4 animate-spin" /> Creating account…
             </>
-          ) : step === STEPS.length - 1 ? (
+          ) : finishStatus === "saving" ? (
+            <>
+              <Loader2 className="size-4 animate-spin" /> Saving…
+            </>
+          ) : step === REVIEW ? (
             "Finish setup"
           ) : (
             "Continue"
           )}
         </Button>
       </div>
-      {step === STEPS.length - 1 && (
-        <button onClick={() => navigate("/today")} className="mt-3 text-center text-xs text-muted-foreground underline">
-          Skip for now — I'll set this up later
+      {step >= SPLIT && (
+        <button
+          onClick={skipWorkoutSetup}
+          disabled={skipStatus === "saving"}
+          className="mt-3 text-center text-xs text-muted-foreground underline disabled:opacity-50"
+        >
+          {skipStatus === "saving" ? "Saving…" : "Skip workout setup for now — I'll build a routine later"}
         </button>
       )}
     </div>

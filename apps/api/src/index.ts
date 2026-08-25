@@ -8,6 +8,8 @@ import { macrosRoutes } from "./routes/macros.ts"
 import { inviteRoutes } from "./routes/invites.ts"
 import { memberRoutes } from "./routes/members.ts"
 import { passkeyRoutes } from "./routes/passkeys.ts"
+import { settingsRoutes } from "./routes/settings.ts"
+import { routineRoutes } from "./routes/routines.ts"
 import type { AppEnv } from "./types.ts"
 
 const app = new Hono<AppEnv>()
@@ -24,5 +26,7 @@ app.route("/api/macros", macrosRoutes)
 app.route("/api/invites", inviteRoutes)
 app.route("/api/members", memberRoutes)
 app.route("/api/auth/passkey", passkeyRoutes)
+app.route("/api/settings", settingsRoutes)
+app.route("/api/routines", routineRoutes)
 
 export default app

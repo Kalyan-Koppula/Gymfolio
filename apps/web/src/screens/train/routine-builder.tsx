@@ -1,6 +1,7 @@
 import * as React from "react"
 import { useNavigate } from "react-router-dom"
-import { Loader2, MoreVertical, Repeat, Sparkles } from "lucide-react"
+import { toast } from "sonner"
+import { ListChecks, Loader2, MoreVertical, Repeat, Sparkles } from "lucide-react"
 import { TopBar } from "@/components/nav/top-bar"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -14,35 +15,54 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Progress } from "@/components/ui/progress"
+import { Skeleton } from "@/components/ui/skeleton"
 import { StickyActionBar } from "@/components/shared/sticky-action-bar"
 import { SaveButton } from "@/components/shared/save-button"
 import { AiDegradedAlert } from "@/components/shared/ai-degraded-alert"
+import { EmptyState } from "@/components/shared/empty-state"
 import { RoutineDaysEditor } from "@/components/shared/routine-days-editor"
-import { useWriteStatus } from "@/hooks/use-write-status"
+import { useApiWrite } from "@/hooks/use-api-write"
 import { useAiProvider } from "@/contexts/ai-provider-context"
-import {
-  ACTIVE_ROUTINE,
-  SPLIT_PRESETS,
-  describeSchedule,
-  splitPreset,
-  type RoutineDay,
-  type SplitType,
-} from "@/lib/stub-data"
-
-function cloneDays(): RoutineDay[] {
-  return ACTIVE_ROUTINE.days.map((d) => ({ ...d, exercises: d.exercises.map((e) => ({ ...e })) }))
-}
+import { getRoutine, getSettings, saveRoutine } from "@/lib/api-client"
+import { SPLIT_PRESETS, autofillDayExercises, describeSchedule, splitPreset, type Equipment, type RoutineDay, type SplitType } from "@/lib/stub-data"
+import type { Routine } from "shared"
 
 export function RoutineBuilder() {
   const navigate = useNavigate()
   const { configured: aiConfigured } = useAiProvider()
-  const [days, setDays] = React.useState<RoutineDay[]>(cloneDays)
-  const [activeDay, setActiveDay] = React.useState(days[0].id)
+
+  // undefined = still loading, null = confirmed no routine exists yet
+  const [routine, setRoutine] = React.useState<Routine | null | undefined>(undefined)
+  const [equipment, setEquipment] = React.useState<Equipment[]>([])
+  const [days, setDays] = React.useState<RoutineDay[]>([])
+  const [activeDay, setActiveDay] = React.useState("")
+  // Provenance isn't persisted — defaults to "manual" for whatever was loaded, switches to
+  // "ai" only for a generation that happened in this session.
+  const [createdVia, setCreatedVia] = React.useState<"ai" | "manual">("manual")
+
   const [aiDialogOpen, setAiDialogOpen] = React.useState(false)
-  const [aiSplitType, setAiSplitType] = React.useState<SplitType | "ai_choice">(ACTIVE_ROUTINE.splitType)
+  const [aiSplitType, setAiSplitType] = React.useState<SplitType | "ai_choice">("ai_choice")
   const [generating, setGenerating] = React.useState(false)
   const [genProgress, setGenProgress] = React.useState(0)
-  const { status, run } = useWriteStatus("Routine saved as active")
+  const { status, run } = useApiWrite<{ routine: Routine }>("Routine saved as active")
+
+  React.useEffect(() => {
+    getRoutine()
+      .then((res) => {
+        setRoutine(res.routine)
+        if (res.routine) {
+          setDays(res.routine.days)
+          setActiveDay(res.routine.days[0]?.id ?? "")
+        }
+      })
+      .catch(() => {
+        setRoutine(null)
+        toast.error("Couldn't load your routine")
+      })
+    getSettings()
+      .then((s) => setEquipment(s.equipment))
+      .catch(() => {})
+  }, [])
 
   function runGeneration() {
     setGenerating(true)
@@ -56,7 +76,23 @@ export function RoutineBuilder() {
       window.clearInterval(tick)
       setGenProgress(100)
       window.setTimeout(() => {
-        setDays(cloneDays())
+        const splitType = aiSplitType === "ai_choice" ? "upper_lower" : aiSplitType
+        const preset = SPLIT_PRESETS.find((p) => p.id === splitType)!
+        const generated: RoutineDay[] = preset.dayLabels.map((label, i) => ({
+          id: `generated-day-${i + 1}`,
+          label,
+          exercises: autofillDayExercises(label, equipment),
+        }))
+        setDays(generated)
+        setActiveDay(generated[0]?.id ?? "")
+        setCreatedVia("ai")
+        setRoutine((prev) => ({
+          name: `${preset.label} — AI-generated`,
+          splitType,
+          schedule: prev?.schedule ?? { mode: "rotating", workDays: 4, restDays: 1 },
+          days: generated,
+          updatedAt: Date.now(),
+        }))
         setGenerating(false)
         setAiDialogOpen(false)
       }, 200)
@@ -70,7 +106,21 @@ export function RoutineBuilder() {
         ? "Drafting your split…"
         : "Validating every exercise against the library…"
 
-  const activePreset = splitPreset(ACTIVE_ROUTINE.splitType)
+  function handleSave() {
+    if (!routine) return
+    run(
+      () =>
+        saveRoutine({
+          name: routine.name,
+          splitType: routine.splitType,
+          schedule: routine.schedule,
+          days,
+        }),
+      (res) => setRoutine(res.routine),
+    )
+  }
+
+  const activePreset = routine ? splitPreset(routine.splitType) : null
 
   return (
     <div>
@@ -212,25 +262,44 @@ export function RoutineBuilder() {
       <div className="space-y-4 px-4 py-4 pb-28">
         {!aiConfigured && <AiDegradedAlert reason="no_key" />}
 
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Active routine</p>
-            <p className="font-heading text-lg font-semibold">{ACTIVE_ROUTINE.name}</p>
-            <p className="text-xs text-muted-foreground">
-              {activePreset.label} · {describeSchedule(ACTIVE_ROUTINE.schedule)}
-            </p>
+        {routine === undefined ? (
+          <div className="space-y-4">
+            <Skeleton className="h-16 w-full rounded-xl" />
+            <Skeleton className="h-64 w-full rounded-xl" />
           </div>
-          <Badge variant={ACTIVE_ROUTINE.createdVia === "ai" ? "default" : "secondary"}>
-            {ACTIVE_ROUTINE.createdVia === "ai" ? "AI-generated" : "Manual"}
-          </Badge>
-        </div>
+        ) : routine === null ? (
+          <EmptyState
+            icon={ListChecks}
+            title="No active routine yet"
+            description="Build one manually, or let AI propose a split from your equipment — either way, editable before you save it."
+            actionLabel="Build a routine"
+            onAction={() => navigate("/train/routine/new")}
+          />
+        ) : (
+          <>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Active routine</p>
+                <p className="font-heading text-lg font-semibold">{routine.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {activePreset?.label} · {describeSchedule(routine.schedule)}
+                </p>
+              </div>
+              <Badge variant={createdVia === "ai" ? "default" : "secondary"}>
+                {createdVia === "ai" ? "AI-generated" : "Manual"}
+              </Badge>
+            </div>
 
-        <RoutineDaysEditor days={days} setDays={setDays} activeDay={activeDay} onActiveDayChange={setActiveDay} />
+            <RoutineDaysEditor days={days} setDays={setDays} activeDay={activeDay} onActiveDayChange={setActiveDay} />
+          </>
+        )}
       </div>
 
-      <StickyActionBar>
-        <SaveButton status={status} onClick={() => run()} idleLabel="Save as active routine" className="w-full" />
-      </StickyActionBar>
+      {routine != null && (
+        <StickyActionBar>
+          <SaveButton status={status} onClick={handleSave} idleLabel="Save as active routine" className="w-full" />
+        </StickyActionBar>
+      )}
     </div>
   )
 }

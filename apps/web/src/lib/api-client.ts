@@ -23,6 +23,10 @@ import {
   CreateSleepEntryInputSchema,
   MacroEntrySchema,
   UpsertMacroEntryInputSchema,
+  UserSettingsSchema,
+  UpsertUserSettingsInputSchema,
+  RoutineSchema,
+  SaveRoutineInputSchema,
   type RegisterInput,
   type LoginInput,
   type SessionResponse,
@@ -35,6 +39,10 @@ import {
   type CreateSleepEntryInput,
   type MacroEntry,
   type UpsertMacroEntryInput,
+  type UserSettings,
+  type UpsertUserSettingsInput,
+  type Routine,
+  type SaveRoutineInput,
 } from "shared"
 
 export class ApiError extends Error {
@@ -203,4 +211,24 @@ export function getMacrosForDate(date?: string): Promise<{ entry: MacroEntry | n
 export function upsertMacros(input: UpsertMacroEntryInput): Promise<{ entry: MacroEntry }> {
   UpsertMacroEntryInputSchema.parse(input)
   return request("/macros", { method: "PUT", body: JSON.stringify(input) }, z.object({ entry: MacroEntrySchema }))
+}
+
+// --- settings (hydration goal, macro targets, equipment) ---
+export function getSettings(): Promise<UserSettings> {
+  return request("/settings", { method: "GET" }, UserSettingsSchema)
+}
+
+export function saveSettings(input: UpsertUserSettingsInput): Promise<UserSettings> {
+  UpsertUserSettingsInputSchema.parse(input)
+  return request("/settings", { method: "PUT", body: JSON.stringify(input) }, UserSettingsSchema)
+}
+
+// --- routine ---
+export function getRoutine(): Promise<{ routine: Routine | null }> {
+  return request("/routines", { method: "GET" }, z.object({ routine: RoutineSchema.nullable() }))
+}
+
+export function saveRoutine(input: SaveRoutineInput): Promise<{ routine: Routine }> {
+  SaveRoutineInputSchema.parse(input)
+  return request("/routines", { method: "PUT", body: JSON.stringify(input) }, z.object({ routine: RoutineSchema }))
 }

@@ -1,22 +1,67 @@
 import * as React from "react"
 import { useNavigate } from "react-router-dom"
-import { Check, ChevronRight, History, X } from "lucide-react"
+import { toast } from "sonner"
+import { Check, ChevronRight, History, ListChecks, X } from "lucide-react"
 import { TopBar } from "@/components/nav/top-bar"
 import { OfflineBanner } from "@/components/shared/offline-banner"
 import { ExerciseThumb } from "@/components/shared/exercise-thumb"
+import { EmptyState } from "@/components/shared/empty-state"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { NumberStepper } from "@/components/shared/number-stepper"
 import { StickyActionBar } from "@/components/shared/sticky-action-bar"
 import { Button } from "@/components/ui/button"
 import { useWriteStatus } from "@/hooks/use-write-status"
-import { ACTIVE_ROUTINE, currentCycleStep, exerciseById, getCurrentDay, suggestNextWeight } from "@/lib/stub-data"
+import { getRoutine } from "@/lib/api-client"
+import { currentCycleStep, exerciseById, getCurrentDay, suggestNextWeight, type RoutineDay } from "@/lib/stub-data"
+import type { Routine } from "shared"
 
 type SetLog = { reps: number; weightKg: number; completed: boolean }
 
 export function ActiveWorkout() {
   const navigate = useNavigate()
-  const day = getCurrentDay(ACTIVE_ROUTINE, currentCycleStep())
+  // undefined = still loading, null = confirmed no routine exists yet
+  const [routine, setRoutine] = React.useState<Routine | null | undefined>(undefined)
+
+  React.useEffect(() => {
+    getRoutine()
+      .then((res) => setRoutine(res.routine))
+      .catch(() => {
+        setRoutine(null)
+        toast.error("Couldn't load your routine")
+      })
+  }, [])
+
+  if (routine === undefined) {
+    return (
+      <div className="space-y-4 px-4 py-4">
+        <Skeleton className="h-8 w-40" />
+        <Skeleton className="h-64 w-full rounded-xl" />
+      </div>
+    )
+  }
+
+  if (routine === null || routine.days.length === 0) {
+    return (
+      <div className="px-4 py-8">
+        <EmptyState
+          icon={ListChecks}
+          title="No routine to work from yet"
+          description="Build a routine first — then today's workout picks itself from wherever you are in the split."
+          actionLabel="Go to Routine Builder"
+          onAction={() => navigate("/train/routine")}
+        />
+      </div>
+    )
+  }
+
+  const day = getCurrentDay(routine, currentCycleStep())
+  return <ActiveWorkoutSession key={day.id} day={day} />
+}
+
+function ActiveWorkoutSession({ day }: { day: RoutineDay }) {
+  const navigate = useNavigate()
   const [exIndex, setExIndex] = React.useState(0)
   const target = day.exercises[exIndex]
   const exercise = exerciseById(target.exerciseId)!

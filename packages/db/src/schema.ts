@@ -1,10 +1,9 @@
 import { sqliteTable, text, integer, real, uniqueIndex } from "drizzle-orm/sqlite-core"
 
-// Scoped to the Foundation pass (architecture §2, trimmed): auth + the four core logging
-// modules only. Exercise/Routine/AIProviderConfig/ThemePreference are deliberately not
-// defined yet — the frontend's routine model has already grown past the architecture
-// doc's original shape (split types, schedules, performance history), so committing to a
-// schema for it now would likely need reworking once that's actually planned.
+// Scoped to the Foundation pass (architecture §2, trimmed) plus auth, settings, and routines.
+// AIProviderConfig/ThemePreference are still deliberately not defined — those stay
+// localStorage-only client preferences, not account data that needs to follow the user
+// across devices.
 
 export const tenants = sqliteTable("tenants", {
   id: text("id").primaryKey(),
@@ -129,3 +128,42 @@ export const macroEntries = sqliteTable(
   },
   (table) => [uniqueIndex("macro_entries_user_date_idx").on(table.userId, table.date)],
 )
+
+// One row per user — hydration/macro goals and equipment inventory set during onboarding
+// (and editable afterward from Settings). PK is userId directly rather than a separate id +
+// unique index, since exactly one settings row per person is the actual invariant.
+export const userSettings = sqliteTable("user_settings", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id),
+  tenantId: text("tenant_id")
+    .notNull()
+    .references(() => tenants.id),
+  hydrationGoalMl: integer("hydration_goal_ml").notNull().default(3000),
+  macroMode: text("macro_mode").notNull().default("computed"), // "computed" | "manual"
+  bodyweightKg: real("bodyweight_kg"),
+  macroCalories: integer("macro_calories").notNull().default(2400),
+  macroProtein: integer("macro_protein").notNull().default(180),
+  macroCarbs: integer("macro_carbs").notNull().default(240),
+  macroFat: integer("macro_fat").notNull().default(70),
+  equipmentJson: text("equipment_json").notNull().default("[]"), // JSON-encoded Equipment[]
+  onboardingCompletedAt: integer("onboarding_completed_at"),
+  updatedAt: integer("updated_at").notNull(),
+})
+
+// One row per user — the current active routine. No isActive flag / multi-routine history;
+// saving a routine replaces this row wholesale, same one-row-per-user shape as userSettings.
+export const routines = sqliteTable("routines", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id),
+  tenantId: text("tenant_id")
+    .notNull()
+    .references(() => tenants.id),
+  name: text("name").notNull(),
+  splitType: text("split_type").notNull(),
+  scheduleJson: text("schedule_json").notNull(), // JSON-encoded SchedulePattern
+  daysJson: text("days_json").notNull(), // JSON-encoded RoutineDay[]
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+})

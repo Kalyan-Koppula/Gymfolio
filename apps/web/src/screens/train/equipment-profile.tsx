@@ -1,23 +1,40 @@
 import * as React from "react"
+import { toast } from "sonner"
 import { Camera, Check, Sparkles } from "lucide-react"
 import { TopBar } from "@/components/nav/top-bar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
 import { StickyActionBar } from "@/components/shared/sticky-action-bar"
 import { SaveButton } from "@/components/shared/save-button"
 import { AiDegradedAlert } from "@/components/shared/ai-degraded-alert"
-import { useWriteStatus } from "@/hooks/use-write-status"
+import { useApiWrite } from "@/hooks/use-api-write"
 import { useAiProvider } from "@/contexts/ai-provider-context"
-import { EQUIPMENT_LABELS, EQUIPMENT_PROFILE, type Equipment } from "@/lib/stub-data"
+import { getSettings, saveSettings } from "@/lib/api-client"
+import { EQUIPMENT_LABELS, type Equipment } from "@/lib/stub-data"
+import type { UserSettings } from "shared"
 
 const ALL_EQUIPMENT = Object.keys(EQUIPMENT_LABELS) as Equipment[]
 
 export function EquipmentProfile() {
   const { configured: aiConfigured } = useAiProvider()
-  const [selected, setSelected] = React.useState<Set<Equipment>>(new Set(EQUIPMENT_PROFILE.tags))
-  const [source, setSource] = React.useState(EQUIPMENT_PROFILE.source)
-  const { status, run } = useWriteStatus("Equipment profile saved")
+  const [settings, setSettings] = React.useState<UserSettings | null>(null)
+  const [selected, setSelected] = React.useState<Set<Equipment>>(new Set())
+  // Provenance isn't persisted server-side — it only reflects what happened in this session,
+  // defaulting to "manual" for whatever was already saved since there's no history of how it
+  // originally got there.
+  const [source, setSource] = React.useState<"ai_detected" | "manual">("manual")
+  const { status, run } = useApiWrite<UserSettings>("Equipment profile saved")
+
+  React.useEffect(() => {
+    getSettings()
+      .then((s) => {
+        setSettings(s)
+        setSelected(new Set(s.equipment))
+      })
+      .catch(() => toast.error("Couldn't load your equipment profile"))
+  }, [])
 
   function toggle(eq: Equipment) {
     setSelected((prev) => {
@@ -32,6 +49,21 @@ export function EquipmentProfile() {
   function runDetection() {
     setSelected(new Set(["barbell", "dumbbell", "bench", "pull-up-bar", "cable-machine", "squat-rack"]))
     setSource("ai_detected")
+  }
+
+  function handleSave() {
+    if (!settings) return
+    run(
+      () =>
+        saveSettings({
+          hydrationGoalMl: settings.hydrationGoalMl,
+          macroMode: settings.macroMode,
+          bodyweightKg: settings.bodyweightKg,
+          macroTargets: settings.macroTargets,
+          equipment: Array.from(selected),
+        }),
+      setSettings,
+    )
   }
 
   return (
@@ -71,26 +103,34 @@ export function EquipmentProfile() {
           <p className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
             Available equipment
           </p>
-          <div className="flex flex-wrap gap-2">
-            {ALL_EQUIPMENT.map((eq) => {
-              const active = selected.has(eq)
-              return (
-                <button
-                  key={eq}
-                  onClick={() => toggle(eq)}
-                  className="flex h-10 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium transition-all duration-150 active:scale-95"
-                  style={{
-                    borderColor: active ? "var(--primary)" : "var(--border)",
-                    backgroundColor: active ? "var(--primary)" : "transparent",
-                    color: active ? "var(--primary-foreground)" : "var(--foreground)",
-                  }}
-                >
-                  {active && <Check className="size-3.5" />}
-                  {EQUIPMENT_LABELS[eq]}
-                </button>
-              )
-            })}
-          </div>
+          {!settings ? (
+            <div className="flex flex-wrap gap-2">
+              {ALL_EQUIPMENT.map((eq) => (
+                <Skeleton key={eq} className="h-10 w-24 rounded-full" />
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {ALL_EQUIPMENT.map((eq) => {
+                const active = selected.has(eq)
+                return (
+                  <button
+                    key={eq}
+                    onClick={() => toggle(eq)}
+                    className="flex h-10 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium transition-all duration-150 active:scale-95"
+                    style={{
+                      borderColor: active ? "var(--primary)" : "var(--border)",
+                      backgroundColor: active ? "var(--primary)" : "transparent",
+                      color: active ? "var(--primary-foreground)" : "var(--foreground)",
+                    }}
+                  >
+                    {active && <Check className="size-3.5" />}
+                    {EQUIPMENT_LABELS[eq]}
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
 
         <Badge variant="outline" className="text-xs">
@@ -99,7 +139,7 @@ export function EquipmentProfile() {
       </div>
 
       <StickyActionBar>
-        <SaveButton status={status} onClick={() => run()} idleLabel="Save equipment profile" className="w-full" />
+        <SaveButton status={status} onClick={handleSave} idleLabel="Save equipment profile" className="w-full" />
       </StickyActionBar>
     </div>
   )

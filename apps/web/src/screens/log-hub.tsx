@@ -14,7 +14,6 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { SaveButton } from "@/components/shared/save-button"
 import { useApiWrite } from "@/hooks/use-api-write"
 import { cn } from "@/lib/utils"
-import { HYDRATION_GOAL_ML, MACRO_TARGETS } from "@/lib/stub-data"
 import {
   getBodyMetrics,
   createBodyMetricEntry,
@@ -24,8 +23,9 @@ import {
   createSleepEntry,
   getMacrosForDate,
   upsertMacros,
+  getSettings,
 } from "@/lib/api-client"
-import type { BodyMetricEntry, SleepEntry } from "shared"
+import type { BodyMetricEntry, SleepEntry, UserSettings } from "shared"
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10)
@@ -151,16 +151,20 @@ function WeightTab() {
 
 function HydrationTab() {
   const [totalMl, setTotalMl] = React.useState(0)
+  const [goalMl, setGoalMl] = React.useState(3000)
   const [loading, setLoading] = React.useState(true)
   const [custom, setCustom] = React.useState("")
   const { run } = useApiWrite<unknown>("Hydration logged")
-  const pct = Math.min(100, (totalMl / HYDRATION_GOAL_ML) * 100)
+  const pct = Math.min(100, (totalMl / goalMl) * 100)
 
   React.useEffect(() => {
     getHydrationToday()
       .then((res) => setTotalMl(res.totalMl))
       .catch(() => toast.error("Couldn't load today's hydration"))
       .finally(() => setLoading(false))
+    getSettings()
+      .then((s) => setGoalMl(s.hydrationGoalMl))
+      .catch(() => {})
   }, [])
 
   function quickAdd(ml: number) {
@@ -182,7 +186,7 @@ function HydrationTab() {
                 {(totalMl / 1000).toFixed(2)}L
               </span>
             )}
-            <span className="text-sm text-muted-foreground">of {(HYDRATION_GOAL_ML / 1000).toFixed(1)}L goal</span>
+            <span className="text-sm text-muted-foreground">of {(goalMl / 1000).toFixed(1)}L goal</span>
           </div>
           <Progress value={pct} className="h-2.5" />
         </CardContent>
@@ -335,16 +339,10 @@ function SleepTab() {
   )
 }
 
-const MACRO_FIELDS = [
-  { key: "calories", label: "Calories", unit: "kcal", target: MACRO_TARGETS.calories },
-  { key: "protein", label: "Protein", unit: "g", target: MACRO_TARGETS.protein },
-  { key: "carbs", label: "Carbs", unit: "g", target: MACRO_TARGETS.carbs },
-  { key: "fat", label: "Fat", unit: "g", target: MACRO_TARGETS.fat },
-] as const
-
 function MacrosTab() {
   const { status, run } = useApiWrite<unknown>("Macros saved")
   const [values, setValues] = React.useState({ calories: 0, protein: 0, carbs: 0, fat: 0 })
+  const [settings, setSettings] = React.useState<UserSettings | null>(null)
   const [loading, setLoading] = React.useState(true)
 
   React.useEffect(() => {
@@ -354,24 +352,36 @@ function MacrosTab() {
       })
       .catch(() => toast.error("Couldn't load today's macros"))
       .finally(() => setLoading(false))
+    getSettings()
+      .then(setSettings)
+      .catch(() => {})
   }, [])
 
   function handleSave() {
     run(() => upsertMacros({ date: todayIso(), ...values }))
   }
 
+  const macroFields = settings
+    ? ([
+        { key: "calories", label: "Calories", unit: "kcal", target: settings.macroTargets.calories },
+        { key: "protein", label: "Protein", unit: "g", target: settings.macroTargets.protein },
+        { key: "carbs", label: "Carbs", unit: "g", target: settings.macroTargets.carbs },
+        { key: "fat", label: "Fat", unit: "g", target: settings.macroTargets.fat },
+      ] as const)
+    : []
+
   return (
     <div className="space-y-5">
       <Card>
         <CardContent className="space-y-4">
-          {loading ? (
+          {loading || !settings ? (
             <div className="space-y-4">
-              {MACRO_FIELDS.map((f) => (
-                <Skeleton key={f.key} className="h-9 w-full rounded-lg" />
+              {(["calories", "protein", "carbs", "fat"] as const).map((key) => (
+                <Skeleton key={key} className="h-9 w-full rounded-lg" />
               ))}
             </div>
           ) : (
-            MACRO_FIELDS.map((f) => (
+            macroFields.map((f) => (
               <div key={f.key} className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <Label htmlFor={f.key} className="text-sm">

@@ -1,19 +1,10 @@
-// Fixture data for the modules that don't have a backend yet — exercise library, equipment
-// profile, routines, and adherence history (see fitness-tracker-architecture.md §12 for the
-// build order). Weight, hydration, sleep, and macro logging have moved to the real API in
-// src/lib/api-client.ts; the shapes here still mirror PRD §10 / architecture §2 so wiring
-// each remaining module up later is a data-source swap, not a redesign.
+// Fixture data for the modules that don't have a backend yet — exercise library and
+// adherence history (see fitness-tracker-architecture.md §12 for the build order). Weight,
+// hydration, sleep, macro logging, settings (hydration goal/macro targets/equipment), and
+// routines have all moved to the real API in src/lib/api-client.ts.
 
-export type Equipment =
-  | "barbell"
-  | "dumbbell"
-  | "bench"
-  | "pull-up-bar"
-  | "cable-machine"
-  | "kettlebell"
-  | "resistance-band"
-  | "bodyweight"
-  | "squat-rack"
+export type { Equipment, SplitType, SchedulePattern } from "shared"
+import type { Equipment, RoutineExercise as SharedRoutineExercise } from "shared"
 
 export const EQUIPMENT_LABELS: Record<Equipment, string> = {
   barbell: "Barbell",
@@ -95,12 +86,10 @@ export const EXERCISES: Exercise[] = names.map(([name, muscleGroups, equipment, 
       : undefined,
 }))
 
-export type RoutineExercise = {
-  exerciseId: string
-  targetSets: number
-  targetReps: string
-  targetWeightKg: number | null
-  /** Stands in for a real session-history read — no WorkoutLog table exists yet. */
+// Persisted shape (packages/shared/src/routines.ts) plus lastPerformance, which stands in for
+// a real session-history read — no WorkoutLog table exists yet, so it's frontend-only/derived
+// and never sent to the API.
+export type RoutineExercise = SharedRoutineExercise & {
   lastPerformance?: { reps: number; weightKg: number; date: string }
 }
 
@@ -109,8 +98,6 @@ export type RoutineDay = {
   label: string
   exercises: RoutineExercise[]
 }
-
-export type SplitType = "full_body" | "upper_lower" | "push_pull_legs" | "bro_split" | "custom"
 
 export type SplitPreset = {
   id: SplitType
@@ -165,16 +152,6 @@ export function splitPreset(id: SplitType) {
   return SPLIT_PRESETS.find((p) => p.id === id)!
 }
 
-/**
- * Real trackers typically model schedule as a rotating day-list (work N days, rest M,
- * repeat — independent of the calendar) rather than hard-binding to specific weekdays;
- * calendar pinning is layered on top as a convenience, not the source of truth. Both are
- * supported here since the split/schedule flow lets a user pick either.
- */
-export type SchedulePattern =
-  | { mode: "weekly"; daysPerWeek: number; pinnedWeekdays: string[] }
-  | { mode: "rotating"; workDays: number; restDays: number }
-
 export const ROTATING_PATTERNS: Array<{ label: string; workDays: number; restDays: number }> = [
   { label: "1 on / 1 off", workDays: 1, restDays: 1 },
   { label: "2 on / 1 off", workDays: 2, restDays: 1 },
@@ -183,129 +160,6 @@ export const ROTATING_PATTERNS: Array<{ label: string; workDays: number; restDay
 ]
 
 export const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-
-export const ACTIVE_ROUTINE = {
-  id: "routine-1",
-  name: "Upper/Lower Split — Muscle Gain",
-  createdVia: "ai" as const,
-  splitType: "upper_lower" as SplitType,
-  schedule: { mode: "rotating", workDays: 4, restDays: 1 } as SchedulePattern,
-  days: [
-    {
-      id: "day-1",
-      label: "Upper A",
-      exercises: [
-        {
-          exerciseId: "ex-2",
-          targetSets: 4,
-          targetReps: "6-8",
-          targetWeightKg: 70,
-          lastPerformance: { reps: 8, weightKg: 70, date: "2026-08-11" },
-        },
-        {
-          exerciseId: "ex-6",
-          targetSets: 4,
-          targetReps: "8-10",
-          targetWeightKg: 24,
-          lastPerformance: { reps: 10, weightKg: 24, date: "2026-08-11" },
-        },
-        {
-          exerciseId: "ex-4",
-          targetSets: 3,
-          targetReps: "10-12",
-          targetWeightKg: 18,
-          lastPerformance: { reps: 9, weightKg: 18, date: "2026-08-11" },
-        },
-        {
-          exerciseId: "ex-18",
-          targetSets: 3,
-          targetReps: "12-15",
-          targetWeightKg: 40,
-          lastPerformance: { reps: 15, weightKg: 40, date: "2026-08-11" },
-        },
-        { exerciseId: "ex-19", targetSets: 3, targetReps: "12", targetWeightKg: 14 },
-      ],
-    },
-    {
-      id: "day-2",
-      label: "Lower A",
-      exercises: [
-        {
-          exerciseId: "ex-1",
-          targetSets: 4,
-          targetReps: "5-6",
-          targetWeightKg: 90,
-          lastPerformance: { reps: 6, weightKg: 90, date: "2026-08-16" },
-        },
-        {
-          exerciseId: "ex-13",
-          targetSets: 3,
-          targetReps: "8-10",
-          targetWeightKg: 60,
-          lastPerformance: { reps: 8, weightKg: 60, date: "2026-08-16" },
-        },
-        { exerciseId: "ex-9", targetSets: 3, targetReps: "10/leg", targetWeightKg: 16 },
-        { exerciseId: "ex-10", targetSets: 3, targetReps: "45s", targetWeightKg: null },
-      ],
-    },
-    {
-      id: "day-3",
-      label: "Upper B",
-      exercises: [
-        { exerciseId: "ex-5", targetSets: 4, targetReps: "6-8", targetWeightKg: null },
-        {
-          exerciseId: "ex-11",
-          targetSets: 3,
-          targetReps: "8-10",
-          targetWeightKg: 26,
-          lastPerformance: { reps: 10, weightKg: 26, date: "2026-08-14" },
-        },
-        {
-          exerciseId: "ex-17",
-          targetSets: 3,
-          targetReps: "8-10",
-          targetWeightKg: 45,
-          lastPerformance: { reps: 7, weightKg: 45, date: "2026-08-14" },
-        },
-        {
-          exerciseId: "ex-8",
-          targetSets: 3,
-          targetReps: "10-12",
-          targetWeightKg: 25,
-          lastPerformance: { reps: 12, weightKg: 25, date: "2026-08-14" },
-        },
-      ],
-    },
-    {
-      id: "day-4",
-      label: "Lower B",
-      exercises: [
-        {
-          exerciseId: "ex-3",
-          targetSets: 3,
-          targetReps: "5",
-          targetWeightKg: 110,
-          lastPerformance: { reps: 5, weightKg: 110, date: "2026-08-13" },
-        },
-        {
-          exerciseId: "ex-21",
-          targetSets: 3,
-          targetReps: "8-10",
-          targetWeightKg: 70,
-          lastPerformance: { reps: 9, weightKg: 70, date: "2026-08-13" },
-        },
-        {
-          exerciseId: "ex-23",
-          targetSets: 3,
-          targetReps: "8/leg",
-          targetWeightKg: 12,
-          lastPerformance: { reps: 6, weightKg: 12, date: "2026-08-13" },
-        },
-        { exerciseId: "ex-20", targetSets: 3, targetReps: "10", targetWeightKg: null },
-      ],
-    },
-  ] satisfies RoutineDay[],
-}
 
 /**
  * Which routine day is "today." Ideally this advances by completed workouts, not calendar
@@ -401,12 +255,6 @@ function dateOffset(daysAgo: number) {
   return d.toISOString().slice(0, 10)
 }
 
-// Weight/hydration/sleep/macro history are real now (see src/lib/api-client.ts) — these
-// stub constants stayed only as long as those screens read from stub data.
-
-export const HYDRATION_GOAL_ML = 3000
-export const MACRO_TARGETS = { calories: 2400, protein: 180, carbs: 240, fat: 70 }
-
 export const ADHERENCE_HISTORY = Array.from({ length: 12 }, (_, i) => {
   const weeksAgo = 11 - i
   return {
@@ -423,11 +271,6 @@ export const RECENT_SESSIONS = [
   { id: "s4", dayLabel: "Lower B", date: "2026-08-13", completionPct: 69, sets: 9, setsPlanned: 13 },
   { id: "s5", dayLabel: "Upper A", date: "2026-08-11", completionPct: 100, sets: 19, setsPlanned: 19 },
 ]
-
-export const EQUIPMENT_PROFILE: { tags: Equipment[]; source: "ai_detected" | "manual" } = {
-  tags: ["barbell", "dumbbell", "bench", "pull-up-bar", "cable-machine", "squat-rack"],
-  source: "ai_detected",
-}
 
 export const AI_PROVIDERS = [
   { id: "anthropic", label: "Anthropic", models: ["claude-sonnet-5", "claude-opus-5"] },

@@ -3,6 +3,7 @@ packages:
   - "packages/*"
 allowBuilds:
   esbuild: true
+  playwright-chromium: set this to true or false
   workerd: true
 minimumReleaseAgeExclude:
   - '@cloudflare/workers-types@5.20260825.1'

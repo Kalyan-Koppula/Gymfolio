@@ -10,15 +10,13 @@ import { NumberStepper } from "@/components/shared/number-stepper"
 import { StickyActionBar } from "@/components/shared/sticky-action-bar"
 import { Button } from "@/components/ui/button"
 import { useWriteStatus } from "@/hooks/use-write-status"
-import { useSimulator } from "@/contexts/simulator-provider"
-import { ACTIVE_ROUTINE, exerciseById, getCurrentDay, suggestNextWeight } from "@/lib/stub-data"
+import { ACTIVE_ROUTINE, currentCycleStep, exerciseById, getCurrentDay, suggestNextWeight } from "@/lib/stub-data"
 
 type SetLog = { reps: number; weightKg: number; completed: boolean }
 
 export function ActiveWorkout() {
   const navigate = useNavigate()
-  const { cycleStep } = useSimulator()
-  const day = getCurrentDay(ACTIVE_ROUTINE, cycleStep)
+  const day = getCurrentDay(ACTIVE_ROUTINE, currentCycleStep())
   const [exIndex, setExIndex] = React.useState(0)
   const target = day.exercises[exIndex]
   const exercise = exerciseById(target.exerciseId)!

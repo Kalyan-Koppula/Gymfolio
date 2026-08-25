@@ -8,13 +8,13 @@ import { StickyActionBar } from "@/components/shared/sticky-action-bar"
 import { SaveButton } from "@/components/shared/save-button"
 import { AiDegradedAlert } from "@/components/shared/ai-degraded-alert"
 import { useWriteStatus } from "@/hooks/use-write-status"
-import { useSimulator } from "@/contexts/simulator-provider"
+import { useAiProvider } from "@/contexts/ai-provider-context"
 import { EQUIPMENT_LABELS, EQUIPMENT_PROFILE, type Equipment } from "@/lib/stub-data"
 
 const ALL_EQUIPMENT = Object.keys(EQUIPMENT_LABELS) as Equipment[]
 
 export function EquipmentProfile() {
-  const { aiConfigured } = useSimulator()
+  const { configured: aiConfigured } = useAiProvider()
   const [selected, setSelected] = React.useState<Set<Equipment>>(new Set(EQUIPMENT_PROFILE.tags))
   const [source, setSource] = React.useState(EQUIPMENT_PROFILE.source)
   const { status, run } = useWriteStatus("Equipment profile saved")
@@ -39,7 +39,7 @@ export function EquipmentProfile() {
       <TopBar title="Equipment profile" />
       <div className="space-y-5 px-4 py-4 pb-24">
         <p className="text-sm text-muted-foreground">
-          This filters the exercise library and routine builder down to what you can actually use (FR-5.5).
+          This filters the exercise library and routine builder down to what you can actually use.
         </p>
 
         {!aiConfigured && <AiDegradedAlert reason="no_key" />}

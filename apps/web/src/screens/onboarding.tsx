@@ -8,8 +8,9 @@ import { Progress } from "@/components/ui/progress"
 import { Card, CardContent } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AiDegradedAlert } from "@/components/shared/ai-degraded-alert"
-import { SimulatorTriggerButton } from "@/components/simulator/simulator-sheet"
-import { useSimulator } from "@/contexts/simulator-provider"
+import { useOnlineStatus } from "@/hooks/use-online-status"
+import { useAiProvider } from "@/contexts/ai-provider-context"
+import { useSession } from "@/contexts/session-context"
 import { EQUIPMENT_LABELS, type Equipment } from "@/lib/stub-data"
 import { register, ApiError } from "@/lib/api-client"
 
@@ -18,7 +19,13 @@ const ALL_EQUIPMENT = Object.keys(EQUIPMENT_LABELS) as Equipment[]
 
 export function Onboarding() {
   const navigate = useNavigate()
-  const { aiConfigured, online } = useSimulator()
+  const { configured: aiConfigured } = useAiProvider()
+  const online = useOnlineStatus()
+  // Reached two ways: a fresh instance's very first visitor (no session yet — they create the
+  // owner account here) or a family member who just accepted an invite via /join (already has
+  // a session by the time they land here) — the latter skips straight to personalization so
+  // the account-creation step isn't shown twice.
+  const { user, loading: sessionLoading, setUser } = useSession()
   const [step, setStep] = React.useState(0)
   const [username, setUsername] = React.useState("")
   const [password, setPassword] = React.useState("")
@@ -32,6 +39,12 @@ export function Onboarding() {
 
   const proteinTarget = Math.round(bodyweight * 2.0)
 
+  // useLayoutEffect (not useEffect) so this resolves before paint — otherwise a family member
+  // arriving via /join would see a one-frame flash of the account-creation step.
+  React.useLayoutEffect(() => {
+    if (!sessionLoading && user) setStep((s) => (s === 0 ? 1 : s))
+  }, [sessionLoading, user])
+
   async function createAccount() {
     if (!online) {
       setAccountStatus("error")
@@ -40,7 +53,8 @@ export function Onboarding() {
     }
     setAccountStatus("saving")
     try {
-      await register({ username, password })
+      const { user } = await register({ username, password })
+      setUser(user)
       setAccountStatus("idle")
       setStep(1)
     } catch (err) {
@@ -75,17 +89,18 @@ export function Onboarding() {
     })
   }
 
+  // Avoids a flash of the account-creation step for someone who arrived with a session already
+  // (via /join) before the effect above has a chance to bump past it.
+  if (sessionLoading) return null
+
   return (
     <div className="mx-auto flex min-h-svh max-w-md flex-col px-6 py-8" style={{ paddingTop: "var(--safe-top)" }}>
       <div className="mb-6 space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-            <Dumbbell className="size-4" />
-            <span>
-              Step {step + 1} of {STEPS.length} — {STEPS[step]}
-            </span>
-          </div>
-          <SimulatorTriggerButton />
+        <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+          <Dumbbell className="size-4" />
+          <span>
+            Step {step + 1} of {STEPS.length} — {STEPS[step]}
+          </span>
         </div>
         <Progress value={((step + 1) / STEPS.length) * 100} />
       </div>
@@ -93,9 +108,10 @@ export function Onboarding() {
       <div key={step} className="flex-1 space-y-5 animate-in fade-in slide-in-from-right-3 duration-200 ease-out">
         {step === 0 && (
           <div className="space-y-4">
-            <h1 className="font-heading text-xl font-semibold">Create your account</h1>
+            <h1 className="font-heading text-xl font-semibold">Create the family admin account</h1>
             <p className="text-sm text-muted-foreground">
-              Single user, self-hosted — no email verification, no social login.
+              You're the first person here, so this account becomes the admin — you'll be able to
+              invite family members once you're set up.
             </p>
             {accountStatus === "error" && (
               <Alert variant="destructive">

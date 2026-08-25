@@ -32,7 +32,7 @@ route.get("/", async (c) => {
   return c.json({ entry: toResponse(row) })
 })
 
-// Daily upsert — one row per date, matching FR-8.1's plain-numeric-totals model.
+// Daily upsert — one row per date, plain numeric totals only.
 route.put("/", async (c) => {
   const body = UpsertMacroEntryInputSchema.safeParse(await c.req.json())
   if (!body.success) return c.json({ error: body.error.flatten() }, 400)

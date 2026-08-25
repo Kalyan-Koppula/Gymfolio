@@ -1,18 +1,16 @@
 import { useParams } from "react-router-dom"
-import { Clock3, Plus, Search, MonitorPlay } from "lucide-react"
+import { Plus, Search, MonitorPlay } from "lucide-react"
 import { TopBar } from "@/components/nav/top-bar"
 import { ExerciseThumb } from "@/components/shared/exercise-thumb"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { StickyActionBar } from "@/components/shared/sticky-action-bar"
-import { useSimulator } from "@/contexts/simulator-provider"
 import { EQUIPMENT_LABELS, exerciseById } from "@/lib/stub-data"
 
 export function ExerciseDetail() {
   const { id } = useParams()
   const exercise = exerciseById(id ?? "")
-  const { youtubeQuotaNearCap } = useSimulator()
 
   if (!exercise) return <div className="p-4 text-sm text-muted-foreground">Exercise not found.</div>
 
@@ -47,7 +45,12 @@ export function ExerciseDetail() {
           <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold">
             <MonitorPlay className="size-4" /> Reference video
           </h3>
-          <YoutubeState status={exercise.youtubeStatus} quotaNearCap={youtubeQuotaNearCap} title={exercise.youtube?.title} channel={exercise.youtube?.channel} views={exercise.youtube?.views} />
+          <YoutubeState
+            status={exercise.youtubeStatus}
+            title={exercise.youtube?.title}
+            channel={exercise.youtube?.channel}
+            views={exercise.youtube?.views}
+          />
         </div>
       </div>
 
@@ -62,13 +65,11 @@ export function ExerciseDetail() {
 
 function YoutubeState({
   status,
-  quotaNearCap,
   title,
   channel,
   views,
 }: {
   status: "not_fetched" | "pending" | "ready"
-  quotaNearCap: boolean
   title?: string
   channel?: string
   views?: string
@@ -89,20 +90,12 @@ function YoutubeState({
     )
   }
 
-  // FR-4.5 — a calm, expected placeholder, not an error look. Most exercises sit here
-  // until first added to a routine; quota pressure just extends the wait, never fails outright.
+  // A calm, expected placeholder, not an error look. Most exercises sit here
+  // until first added to a routine.
   return (
     <Card className="border-dashed py-6">
       <CardContent className="flex flex-col items-center gap-2 text-center">
-        {quotaNearCap ? (
-          <>
-            <Clock3 className="size-6 text-muted-foreground" />
-            <p className="text-sm font-medium">Reference video pending</p>
-            <p className="text-xs text-muted-foreground">
-              Daily lookup quota is near its cap — this will fetch automatically once it resets.
-            </p>
-          </>
-        ) : status === "pending" ? (
+        {status === "pending" ? (
           <>
             <Search className="size-6 animate-pulse text-muted-foreground" />
             <p className="text-sm font-medium">Fetching a reference video…</p>

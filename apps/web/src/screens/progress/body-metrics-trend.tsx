@@ -143,8 +143,7 @@ export function BodyMetricsTrend() {
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Missing days don't break the line — gaps are bridged rather than shown as broken segments (FR-1
-          acceptance criterion).
+          Missing days don't break the line — gaps are bridged rather than shown as broken segments.
         </p>
       </div>
     </div>

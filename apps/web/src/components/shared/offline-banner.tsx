@@ -1,5 +1,5 @@
 import { WifiOff } from "lucide-react"
-import { useSimulator } from "@/contexts/simulator-provider"
+import { useOnlineStatus } from "@/hooks/use-online-status"
 
 /**
  * §1.9 / §3.15 — slim, low-noise connectivity indicator. Shown only on screens that
@@ -7,7 +7,7 @@ import { useSimulator } from "@/contexts/simulator-provider"
  * never shown on read-only screens like the exercise library.
  */
 export function OfflineBanner() {
-  const { online } = useSimulator()
+  const online = useOnlineStatus()
   if (online) return null
   return (
     <div

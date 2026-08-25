@@ -2,7 +2,7 @@ import { ImageOff, PlayCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 /**
- * Stands in for the real GIF/static-image asset (FR-4.2). Rendered as a token-driven
+ * Stands in for the real GIF/static-image asset. Rendered as a token-driven
  * placeholder rather than a broken-image icon so the fallback state is deliberate, not
  * an error look — real GIFs/stills swap in without changing this component's contract.
  */

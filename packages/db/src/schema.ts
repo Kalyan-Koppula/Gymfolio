@@ -19,6 +19,8 @@ export const users = sqliteTable("users", {
     .references(() => tenants.id),
   username: text("username").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
+  role: text("role").notNull().default("member"), // "owner" | "member" — exactly one owner per tenant
+  deactivatedAt: integer("deactivated_at"), // null = active; set by the owner removing a member
   createdAt: integer("created_at").notNull(),
 })
 
@@ -28,6 +30,42 @@ export const sessions = sqliteTable("sessions", {
     .notNull()
     .references(() => users.id),
   expiresAt: integer("expires_at").notNull(),
+})
+
+// The actual mechanism behind "no one else who opens this link can sign up" — a token is dead
+// the instant it's used or past expiresAt, checked identically by the public validation
+// endpoint and registration itself.
+export const invites = sqliteTable("invites", {
+  id: text("id").primaryKey(),
+  tenantId: text("tenant_id")
+    .notNull()
+    .references(() => tenants.id),
+  token: text("token").notNull().unique(),
+  label: text("label"), // optional admin-facing nickname, e.g. "Mom"
+  createdBy: text("created_by")
+    .notNull()
+    .references(() => users.id),
+  expiresAt: integer("expires_at").notNull(),
+  usedAt: integer("used_at"),
+  usedByUserId: text("used_by_user_id").references(() => users.id),
+  createdAt: integer("created_at").notNull(),
+})
+
+// Standard WebAuthn credential storage — nothing app-specific about this shape.
+export const credentials = sqliteTable("credentials", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
+  credentialId: text("credential_id").notNull().unique(),
+  publicKey: text("public_key").notNull(), // base64url-encoded COSE public key bytes
+  counter: integer("counter").notNull().default(0),
+  deviceType: text("device_type"), // "singleDevice" | "multiDevice"
+  backedUp: integer("backed_up").notNull().default(0), // 0/1 — SQLite has no native boolean
+  transports: text("transports"), // JSON-encoded string[], e.g. ["internal","hybrid"]
+  label: text("label"), // e.g. "iPhone"
+  createdAt: integer("created_at").notNull(),
+  lastUsedAt: integer("last_used_at"),
 })
 
 export const bodyMetricEntries = sqliteTable("body_metric_entries", {

@@ -2,7 +2,6 @@ import * as React from "react"
 import { ChevronLeft } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
-import { SimulatorTriggerButton } from "@/components/simulator/simulator-sheet"
 import { cn } from "@/lib/utils"
 
 export function TopBar({
@@ -38,7 +37,6 @@ export function TopBar({
       )}
       <h1 className="font-heading flex-1 truncate text-lg font-semibold tracking-tight">{title}</h1>
       {action}
-      <SimulatorTriggerButton />
     </header>
   )
 }

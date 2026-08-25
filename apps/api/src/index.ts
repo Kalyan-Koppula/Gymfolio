@@ -5,6 +5,9 @@ import { bodyMetricsRoutes } from "./routes/body-metrics.ts"
 import { hydrationRoutes } from "./routes/hydration.ts"
 import { sleepRoutes } from "./routes/sleep.ts"
 import { macrosRoutes } from "./routes/macros.ts"
+import { inviteRoutes } from "./routes/invites.ts"
+import { memberRoutes } from "./routes/members.ts"
+import { passkeyRoutes } from "./routes/passkeys.ts"
 import type { AppEnv } from "./types.ts"
 
 const app = new Hono<AppEnv>()
@@ -18,5 +21,8 @@ app.route("/api/body-metrics", bodyMetricsRoutes)
 app.route("/api/hydration", hydrationRoutes)
 app.route("/api/sleep", sleepRoutes)
 app.route("/api/macros", macrosRoutes)
+app.route("/api/invites", inviteRoutes)
+app.route("/api/members", memberRoutes)
+app.route("/api/auth/passkey", passkeyRoutes)
 
 export default app

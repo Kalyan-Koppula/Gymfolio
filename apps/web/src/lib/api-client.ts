@@ -1,8 +1,20 @@
 import { z } from "zod"
+import type {
+  PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
+  RegistrationResponseJSON,
+  AuthenticationResponseJSON,
+} from "@simplewebauthn/browser"
 import {
   RegisterInputSchema,
   LoginInputSchema,
   SessionResponseSchema,
+  HasAccountResponseSchema,
+  InviteSchema,
+  CreateInviteInputSchema,
+  CreateInviteResponseSchema,
+  InviteValidationResponseSchema,
+  MemberSchema,
   BodyMetricEntrySchema,
   CreateBodyMetricEntryInputSchema,
   HydrationTodayResponseSchema,
@@ -14,6 +26,7 @@ import {
   type RegisterInput,
   type LoginInput,
   type SessionResponse,
+  type CreateInviteInput,
   type BodyMetricEntry,
   type CreateBodyMetricEntryInput,
   type HydrationTodayResponse,
@@ -46,6 +59,21 @@ async function request<T>(path: string, init: RequestInit, schema: z.ZodType<T>)
   return schema.parse(await res.json())
 }
 
+// WebAuthn options/response payloads are opaque, browser-shaped objects from
+// @simplewebauthn/browser — not worth re-declaring as zod schemas just to parse them.
+async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
+  const res = await fetch(`/api${path}`, {
+    ...init,
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...init.headers },
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new ApiError(res.status, body?.error ?? `Request failed (${res.status})`)
+  }
+  return res.json() as Promise<T>
+}
+
 // --- auth ---
 export function register(input: RegisterInput) {
   RegisterInputSchema.parse(input)
@@ -63,6 +91,70 @@ export function logout() {
 
 export function getSession(): Promise<SessionResponse> {
   return request("/auth/session", { method: "GET" }, SessionResponseSchema)
+}
+
+export function hasAccount() {
+  return request("/auth/has-account", { method: "GET" }, HasAccountResponseSchema)
+}
+
+// --- invites (owner-only except validateInvite) ---
+export function validateInvite(token: string) {
+  return request(`/invites/${token}`, { method: "GET" }, InviteValidationResponseSchema)
+}
+
+export function listInvites() {
+  return request("/invites", { method: "GET" }, z.object({ invites: z.array(InviteSchema) }))
+}
+
+export function createInvite(input: CreateInviteInput = {}) {
+  CreateInviteInputSchema.parse(input)
+  return request("/invites", { method: "POST", body: JSON.stringify(input) }, CreateInviteResponseSchema)
+}
+
+export function revokeInvite(id: string) {
+  return request<undefined>(`/invites/${id}`, { method: "DELETE" }, z.undefined())
+}
+
+// --- members (owner-only) ---
+export function listMembers() {
+  return request("/members", { method: "GET" }, z.object({ members: z.array(MemberSchema) }))
+}
+
+export function deactivateMember(userId: string) {
+  return request<undefined>(`/members/${userId}/deactivate`, { method: "POST" }, z.undefined())
+}
+
+export function reactivateMember(userId: string) {
+  return request<undefined>(`/members/${userId}/reactivate`, { method: "POST" }, z.undefined())
+}
+
+// --- passkeys ---
+export function passkeyRegisterOptions() {
+  return requestJson<{ flowId: string; options: PublicKeyCredentialCreationOptionsJSON }>(
+    "/auth/passkey/register-options",
+    { method: "POST" },
+  )
+}
+
+export function passkeyRegisterVerify(flowId: string, response: RegistrationResponseJSON, label?: string) {
+  return requestJson<{ ok: true }>("/auth/passkey/register-verify", {
+    method: "POST",
+    body: JSON.stringify({ flowId, response, label }),
+  })
+}
+
+export function passkeyLoginOptions() {
+  return requestJson<{ flowId: string; options: PublicKeyCredentialRequestOptionsJSON }>(
+    "/auth/passkey/login-options",
+    { method: "POST" },
+  )
+}
+
+export function passkeyLoginVerify(flowId: string, response: AuthenticationResponseJSON) {
+  return requestJson<SessionResponse>("/auth/passkey/login-verify", {
+    method: "POST",
+    body: JSON.stringify({ flowId, response }),
+  })
 }
 
 // --- body metrics ---

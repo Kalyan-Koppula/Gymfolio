@@ -19,3 +19,9 @@ id = "0000000000000000000000000000000"
 
 [vars]
 ENVIRONMENT = "development"
+# WebAuthn relying-party config — rpID must be the bare domain (no scheme/port); the browser
+# only allows a credential to be used on the exact rpID (or a parent domain) it was created
+# under. Update all three before deploying to a real domain.
+WEBAUTHN_RP_ID = "localhost"
+WEBAUTHN_RP_NAME = "Fitness Tracker"
+WEBAUTHN_ORIGIN = "http://localhost:5173"

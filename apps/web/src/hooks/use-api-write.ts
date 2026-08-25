@@ -1,20 +1,16 @@
 import * as React from "react"
 import { toast } from "sonner"
-import { useSimulator } from "@/contexts/simulator-provider"
+import { useOnlineStatus } from "@/hooks/use-online-status"
 import type { WriteStatus } from "@/hooks/use-write-status"
 
 /**
- * Same {status, run} shape as useWriteStatus (so SaveButton needs no changes), but backed
- * by a real request instead of the simulator's fake timer — used only by the screens this
- * Foundation pass makes real (Login, Onboarding's account step, the Log hub tabs, Body
- * Metrics Trend). Every other screen keeps using useWriteStatus/simulateWrite untouched.
- *
- * Still honors the prototype simulator's offline toggle: flipping "Network connection"
- * off short-circuits to the same failed state a real dead zone would produce, so that
- * design-review control keeps working against the real backend, not just the mock.
+ * Same {status, run} shape as useWriteStatus (so SaveButton needs no changes), backed by a
+ * real fetch request. Used by the screens with a real API behind them (Login, Onboarding's
+ * account step, the Log hub tabs, Body Metrics Trend); every other screen still uses
+ * useWriteStatus until its backend exists.
  */
 export function useApiWrite<T>(successMessage = "Saved") {
-  const { online } = useSimulator()
+  const online = useOnlineStatus()
   const [status, setStatus] = React.useState<WriteStatus>("idle")
   const lastAction = React.useRef<(() => void) | null>(null)
 

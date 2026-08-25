@@ -1,10 +1,11 @@
 import { Routes, Route } from "react-router-dom"
 import { AppShell } from "@/components/nav/app-shell"
-import { SimulatorSheetRoot } from "@/components/simulator/simulator-sheet"
+import { RequireAuth } from "@/components/nav/require-auth"
+import { RootRedirect } from "@/components/nav/root-redirect"
 
-import { DesignIndex } from "@/screens/design-index"
 import { Onboarding } from "@/screens/onboarding"
 import { Login } from "@/screens/login"
+import { Join } from "@/screens/join"
 import { Today } from "@/screens/today"
 import { LogHub } from "@/screens/log-hub"
 import { ExerciseLibrary } from "@/screens/train/exercise-library"
@@ -19,16 +20,17 @@ import { SettingsHome } from "@/screens/settings/settings-home"
 import { AiProviderSettings } from "@/screens/settings/ai-provider-settings"
 import { AppearanceSettings } from "@/screens/settings/appearance-settings"
 import { AccountSessions } from "@/screens/settings/account-sessions"
+import { Family } from "@/screens/settings/family"
 
 function App() {
   return (
-    <>
-      <SimulatorSheetRoot />
-      <Routes>
-        <Route path="/" element={<DesignIndex />} />
-        <Route path="/onboarding" element={<Onboarding />} />
-        <Route path="/login" element={<Login />} />
+    <Routes>
+      <Route path="/" element={<RootRedirect />} />
+      <Route path="/onboarding" element={<Onboarding />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/join/:token" element={<Join />} />
 
+      <Route element={<RequireAuth />}>
         <Route element={<AppShell />}>
           <Route path="/today" element={<Today />} />
           <Route path="/log" element={<LogHub />} />
@@ -46,9 +48,10 @@ function App() {
           <Route path="/settings/ai" element={<AiProviderSettings />} />
           <Route path="/settings/appearance" element={<AppearanceSettings />} />
           <Route path="/settings/account" element={<AccountSessions />} />
+          <Route path="/settings/family" element={<Family />} />
         </Route>
-      </Routes>
-    </>
+      </Route>
+    </Routes>
   )
 }
 

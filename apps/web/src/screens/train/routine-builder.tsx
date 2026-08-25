@@ -19,7 +19,7 @@ import { SaveButton } from "@/components/shared/save-button"
 import { AiDegradedAlert } from "@/components/shared/ai-degraded-alert"
 import { RoutineDaysEditor } from "@/components/shared/routine-days-editor"
 import { useWriteStatus } from "@/hooks/use-write-status"
-import { useSimulator } from "@/contexts/simulator-provider"
+import { useAiProvider } from "@/contexts/ai-provider-context"
 import {
   ACTIVE_ROUTINE,
   SPLIT_PRESETS,
@@ -35,7 +35,7 @@ function cloneDays(): RoutineDay[] {
 
 export function RoutineBuilder() {
   const navigate = useNavigate()
-  const { aiConfigured } = useSimulator()
+  const { configured: aiConfigured } = useAiProvider()
   const [days, setDays] = React.useState<RoutineDay[]>(cloneDays)
   const [activeDay, setActiveDay] = React.useState(days[0].id)
   const [aiDialogOpen, setAiDialogOpen] = React.useState(false)
@@ -200,7 +200,7 @@ export function RoutineBuilder() {
                   </p>
                   <p className="text-xs text-muted-foreground">
                     Constrained to your equipment-filtered exercise pool — every exercise shown is
-                    guaranteed to exist in the library (FR-6.3).
+                    guaranteed to exist in the library.
                   </p>
                 </div>
               </div>

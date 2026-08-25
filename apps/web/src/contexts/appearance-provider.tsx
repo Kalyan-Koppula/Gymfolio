@@ -14,7 +14,7 @@ type AppearanceState = {
 
 const AppearanceContext = React.createContext<AppearanceState | null>(null)
 
-const STORAGE_KEY = "prototype:appearance"
+const STORAGE_KEY = "fitness-tracker:appearance"
 
 function readStored() {
   try {

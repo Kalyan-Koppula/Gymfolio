@@ -398,7 +398,7 @@ function MacrosTab() {
         </CardContent>
       </Card>
       <p className="text-xs text-muted-foreground">
-        Numeric daily totals only — no per-meal or per-dish logging in v0 (FR-8.1).
+        Numeric daily totals only — no per-meal or per-dish logging.
       </p>
     </div>
   )

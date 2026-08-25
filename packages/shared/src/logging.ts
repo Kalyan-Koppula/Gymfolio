@@ -66,8 +66,8 @@ export const CreateSleepEntryInputSchema = z.object({
 })
 export type CreateSleepEntryInput = z.infer<typeof CreateSleepEntryInputSchema>
 
-// Daily upsert — one row per date, not an append log (PUT semantics, matching FR-8.1's
-// "plain numeric totals" with no per-meal breakdown).
+// Daily upsert — one row per date, not an append log (PUT semantics) — plain numeric
+// totals, no per-meal breakdown.
 export const MacroEntrySchema = z.object({
   date: isoDate,
   calories: z.number().int().nonnegative(),

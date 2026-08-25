@@ -1,4 +1,6 @@
+import * as React from "react"
 import { Link, useNavigate } from "react-router-dom"
+import { toast } from "sonner"
 import { ChevronRight, Droplets, Flame, ListChecks, Play } from "lucide-react"
 import { TopBar } from "@/components/nav/top-bar"
 import { OfflineBanner } from "@/components/shared/offline-banner"
@@ -8,25 +10,48 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { useSimulator } from "@/contexts/simulator-provider"
+import { Skeleton } from "@/components/ui/skeleton"
+import { getHydrationToday, getMacrosForDate } from "@/lib/api-client"
 import {
   ACTIVE_ROUTINE,
   HYDRATION_GOAL_ML,
-  HYDRATION_TODAY_ML,
   MACRO_TARGETS,
-  MACRO_TODAY,
   RECENT_SESSIONS,
+  currentCycleStep,
   describeSchedule,
   exerciseById,
   getCurrentDay,
 } from "@/lib/stub-data"
 
+function greeting() {
+  const hour = new Date().getHours()
+  if (hour < 12) return "Good morning"
+  if (hour < 18) return "Good afternoon"
+  return "Good evening"
+}
+
 export function Today() {
-  const { hasActiveRoutine, cycleStep } = useSimulator()
   const navigate = useNavigate()
+  const hasActiveRoutine = ACTIVE_ROUTINE.days.length > 0
+  const cycleStep = currentCycleStep()
   const today = getCurrentDay(ACTIVE_ROUTINE, cycleStep)
   const dayPosition = (cycleStep % ACTIVE_ROUTINE.days.length) + 1
   const lastSession = RECENT_SESSIONS[0]
+  const todayDate = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(
+    new Date(),
+  )
+
+  const [hydrationMl, setHydrationMl] = React.useState<number | null>(null)
+  const [proteinG, setProteinG] = React.useState<number | null>(null)
+
+  React.useEffect(() => {
+    getHydrationToday()
+      .then((res) => setHydrationMl(res.totalMl))
+      .catch(() => toast.error("Couldn't load today's hydration"))
+    getMacrosForDate()
+      .then((res) => setProteinG(res.entry?.protein ?? 0))
+      .catch(() => toast.error("Couldn't load today's macros"))
+  }, [])
 
   return (
     <div>
@@ -35,8 +60,8 @@ export function Today() {
 
       <div className="space-y-6 px-4 py-5">
         <div>
-          <p className="text-sm text-muted-foreground">Tuesday, August 18</p>
-          <h2 className="font-heading text-2xl font-semibold tracking-tight">Good afternoon</h2>
+          <p className="text-sm text-muted-foreground">{todayDate}</p>
+          <h2 className="font-heading text-2xl font-semibold tracking-tight">{greeting()}</h2>
         </div>
 
         <PwaInstallCard />
@@ -86,34 +111,46 @@ export function Today() {
           <Link to="/log">
             <Card className="h-full py-3.5 transition-colors hover:bg-muted/40">
               <CardContent className="space-y-2 px-3.5">
-                <div className="flex items-center justify-between">
-                  <Droplets className="size-4 text-primary" />
-                  <span className="text-xs text-muted-foreground">
-                    {Math.round((HYDRATION_TODAY_ML / HYDRATION_GOAL_ML) * 100)}%
-                  </span>
-                </div>
-                <p className="text-sm font-medium">Hydration</p>
-                <Progress value={(HYDRATION_TODAY_ML / HYDRATION_GOAL_ML) * 100} className="h-1.5" />
-                <p className="text-xs text-muted-foreground">
-                  {(HYDRATION_TODAY_ML / 1000).toFixed(2)}L / {(HYDRATION_GOAL_ML / 1000).toFixed(1)}L
-                </p>
+                {hydrationMl == null ? (
+                  <Skeleton className="h-20 w-full" />
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <Droplets className="size-4 text-primary" />
+                      <span className="text-xs text-muted-foreground">
+                        {Math.round((hydrationMl / HYDRATION_GOAL_ML) * 100)}%
+                      </span>
+                    </div>
+                    <p className="text-sm font-medium">Hydration</p>
+                    <Progress value={(hydrationMl / HYDRATION_GOAL_ML) * 100} className="h-1.5" />
+                    <p className="text-xs text-muted-foreground">
+                      {(hydrationMl / 1000).toFixed(2)}L / {(HYDRATION_GOAL_ML / 1000).toFixed(1)}L
+                    </p>
+                  </>
+                )}
               </CardContent>
             </Card>
           </Link>
           <Link to="/log">
             <Card className="h-full py-3.5 transition-colors hover:bg-muted/40">
               <CardContent className="space-y-2 px-3.5">
-                <div className="flex items-center justify-between">
-                  <Flame className="size-4 text-primary" />
-                  <span className="text-xs text-muted-foreground">
-                    {Math.round((MACRO_TODAY.protein / MACRO_TARGETS.protein) * 100)}%
-                  </span>
-                </div>
-                <p className="text-sm font-medium">Protein</p>
-                <Progress value={(MACRO_TODAY.protein / MACRO_TARGETS.protein) * 100} className="h-1.5" />
-                <p className="text-xs text-muted-foreground">
-                  {MACRO_TODAY.protein}g / {MACRO_TARGETS.protein}g
-                </p>
+                {proteinG == null ? (
+                  <Skeleton className="h-20 w-full" />
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <Flame className="size-4 text-primary" />
+                      <span className="text-xs text-muted-foreground">
+                        {Math.round((proteinG / MACRO_TARGETS.protein) * 100)}%
+                      </span>
+                    </div>
+                    <p className="text-sm font-medium">Protein</p>
+                    <Progress value={(proteinG / MACRO_TARGETS.protein) * 100} className="h-1.5" />
+                    <p className="text-xs text-muted-foreground">
+                      {proteinG}g / {MACRO_TARGETS.protein}g
+                    </p>
+                  </>
+                )}
               </CardContent>
             </Card>
           </Link>

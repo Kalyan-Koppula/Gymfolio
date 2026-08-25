@@ -1,5 +1,8 @@
-// Stub data for design validation only — shapes mirror the PRD §10 / architecture §2 entities,
-// no backend involved. Replace with real API calls after the prototype is validated.
+// Fixture data for the modules that don't have a backend yet — exercise library, equipment
+// profile, routines, and adherence history (see fitness-tracker-architecture.md §12 for the
+// build order). Weight, hydration, sleep, and macro logging have moved to the real API in
+// src/lib/api-client.ts; the shapes here still mirror PRD §10 / architecture §2 so wiring
+// each remaining module up later is a data-source swap, not a redesign.
 
 export type Equipment =
   | "barbell"
@@ -97,7 +100,7 @@ export type RoutineExercise = {
   targetSets: number
   targetReps: string
   targetWeightKg: number | null
-  /** Simulates a session-history read without a full history store (§ prototype scope). */
+  /** Stands in for a real session-history read — no WorkoutLog table exists yet. */
   lastPerformance?: { reps: number; weightKg: number; date: string }
 }
 
@@ -305,13 +308,20 @@ export const ACTIVE_ROUTINE = {
 }
 
 /**
- * Which routine day is "today" — advances by completed workouts, not calendar days, so it
- * survives any schedule pattern (rotating or weekly) without special-casing. `cycleStep`
- * comes from `useSimulator()`, mirroring the app's other reviewer-driven state; a real
- * build would derive it from the last completed WorkoutLog instead of a stub counter.
+ * Which routine day is "today." Ideally this advances by completed workouts, not calendar
+ * days, so it survives any schedule pattern (rotating or weekly) without special-casing —
+ * that needs a real WorkoutLog table, which doesn't exist yet (Routine/workout logging is
+ * still stub data). `currentCycleStep` is the interim, backend-free stand-in: a value
+ * derived from the real date rather than a manually-advanced counter, so it's at least
+ * deterministic and actually changes day to day. Replace with a real last-completed-day
+ * lookup once workout logging has a backend.
  */
 export function getCurrentDay(routine: { days: RoutineDay[] }, cycleStep: number): RoutineDay {
   return routine.days[cycleStep % routine.days.length]
+}
+
+export function currentCycleStep(): number {
+  return Math.floor(Date.now() / 86_400_000) // days since epoch
 }
 
 export function describeSchedule(schedule: SchedulePattern): string {
@@ -391,27 +401,11 @@ function dateOffset(daysAgo: number) {
   return d.toISOString().slice(0, 10)
 }
 
-export const WEIGHT_HISTORY = Array.from({ length: 90 }, (_, i) => {
-  const daysAgo = 89 - i
-  const base = 82.5 - daysAgo * 0.035
-  const noise = Math.sin(daysAgo * 1.3) * 0.4 + (daysAgo % 5 === 0 ? 0.3 : -0.1)
-  return { date: dateOffset(daysAgo), weightKg: Math.round((base + noise) * 10) / 10 }
-}).filter((_, i) => i % 2 === 0 || i > 80)
+// Weight/hydration/sleep/macro history are real now (see src/lib/api-client.ts) — these
+// stub constants stayed only as long as those screens read from stub data.
 
 export const HYDRATION_GOAL_ML = 3000
-export const HYDRATION_TODAY_ML = 1750
-
 export const MACRO_TARGETS = { calories: 2400, protein: 180, carbs: 240, fat: 70 }
-export const MACRO_TODAY = { calories: 1620, protein: 132, carbs: 150, fat: 48 }
-
-export const SLEEP_HISTORY = Array.from({ length: 14 }, (_, i) => {
-  const daysAgo = 13 - i
-  return {
-    date: dateOffset(daysAgo),
-    hours: Math.round((6.2 + Math.sin(daysAgo) * 1.1 + (daysAgo % 3 === 0 ? 0.6 : 0)) * 10) / 10,
-    quality: (3 + (daysAgo % 3)) as 1 | 2 | 3 | 4 | 5,
-  }
-})
 
 export const ADHERENCE_HISTORY = Array.from({ length: 12 }, (_, i) => {
   const weeksAgo = 11 - i

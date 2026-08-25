@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Link } from "react-router-dom"
 
 /**
- * §3.15 / FR-9.4 — one consistent pattern for "AI degraded" across equipment detection
+ * One consistent pattern for "AI degraded" across equipment detection
  * and routine generation, so the user learns it once. Never a dead end: always names
  * the manual fallback that's already available on the same screen.
  */

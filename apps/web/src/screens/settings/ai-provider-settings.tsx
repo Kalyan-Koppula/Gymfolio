@@ -7,13 +7,12 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { CheckCircle2, Eye, EyeOff, Loader2, ShieldAlert, ShieldCheck } from "lucide-react"
-import { useSimulator } from "@/contexts/simulator-provider"
+import { useAiProvider } from "@/contexts/ai-provider-context"
 import { AI_PROVIDERS } from "@/lib/stub-data"
 
 export function AiProviderSettings() {
-  const { aiConfigured, setAiConfigured } = useSimulator()
-  const [provider, setProvider] = React.useState<(typeof AI_PROVIDERS)[number]["id"]>("anthropic")
-  const [apiKey, setApiKey] = React.useState(aiConfigured ? "sk-ant-••••••••••••••••7f2a" : "")
+  const { configured, setConfigured, provider, setProvider } = useAiProvider()
+  const [apiKey, setApiKey] = React.useState("")
   const [showKey, setShowKey] = React.useState(false)
   const [endpoint, setEndpoint] = React.useState("")
   const [testStatus, setTestStatus] = React.useState<"idle" | "testing" | "ok" | "fail">("idle")
@@ -25,7 +24,7 @@ export function AiProviderSettings() {
     window.setTimeout(() => {
       const ok = apiKey.trim().length > 0
       setTestStatus(ok ? "ok" : "fail")
-      setAiConfigured(ok)
+      setConfigured(ok)
     }, 1100)
   }
 
@@ -38,9 +37,16 @@ export function AiProviderSettings() {
           <AlertTitle>No key configured is a normal, supported state</AlertTitle>
           <AlertDescription>
             Equipment detection and AI routine generation fall back to their manual equivalents everywhere
-            in the app until you add one (FR-9.4).
+            in the app until you add one.
           </AlertDescription>
         </Alert>
+
+        {configured && testStatus === "idle" && (
+          <div className="flex items-center gap-2 rounded-lg bg-success/15 px-3 py-2 text-sm text-success">
+            <CheckCircle2 className="size-4" />A provider was previously confirmed on this device. Re-enter your
+            key below only if you need to change or re-verify it.
+          </div>
+        )}
 
         <Card>
           <CardContent className="space-y-4">
@@ -88,7 +94,7 @@ export function AiProviderSettings() {
                   {showKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                 </button>
               </div>
-              <p className="text-xs text-muted-foreground">Encrypted at rest, never logged (FR-9.2).</p>
+              <p className="text-xs text-muted-foreground">Encrypted at rest, never logged.</p>
             </div>
 
             {provider === "local" && (

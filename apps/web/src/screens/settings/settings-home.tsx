@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom"
-import { ChevronRight, KeyRound, Palette, ShieldCheck } from "lucide-react"
+import { ChevronRight, KeyRound, Palette, ShieldCheck, Users } from "lucide-react"
 import { TopBar } from "@/components/nav/top-bar"
+import { useSession } from "@/contexts/session-context"
 
 const ITEMS = [
   { to: "/settings/ai", icon: KeyRound, label: "AI provider", desc: "Bring-your-own-key configuration" },
@@ -8,13 +9,23 @@ const ITEMS = [
   { to: "/settings/account", icon: ShieldCheck, label: "Account & sessions", desc: "Password, active devices" },
 ]
 
+const OWNER_ITEM = {
+  to: "/settings/family",
+  icon: Users,
+  label: "Family & Access",
+  desc: "Invite members, manage who can sign in",
+}
+
 export function SettingsHome() {
+  const { user } = useSession()
+  const items = user?.role === "owner" ? [...ITEMS, OWNER_ITEM] : ITEMS
+
   return (
     <div>
       <TopBar title="Settings" />
       <div className="px-4 py-4">
         <div className="overflow-hidden rounded-xl border border-border">
-          {ITEMS.map((item, i) => (
+          {items.map((item, i) => (
             <Link
               key={item.to}
               to={item.to}

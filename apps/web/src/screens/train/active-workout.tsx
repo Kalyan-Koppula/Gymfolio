@@ -1,0 +1,216 @@
+import * as React from "react"
+import { useNavigate } from "react-router-dom"
+import { Check, ChevronRight, History, X } from "lucide-react"
+import { TopBar } from "@/components/nav/top-bar"
+import { OfflineBanner } from "@/components/shared/offline-banner"
+import { ExerciseThumb } from "@/components/shared/exercise-thumb"
+import { Badge } from "@/components/ui/badge"
+import { Card, CardContent } from "@/components/ui/card"
+import { NumberStepper } from "@/components/shared/number-stepper"
+import { StickyActionBar } from "@/components/shared/sticky-action-bar"
+import { Button } from "@/components/ui/button"
+import { useWriteStatus } from "@/hooks/use-write-status"
+import { useSimulator } from "@/contexts/simulator-provider"
+import { ACTIVE_ROUTINE, exerciseById, getCurrentDay, suggestNextWeight } from "@/lib/stub-data"
+
+type SetLog = { reps: number; weightKg: number; completed: boolean }
+
+export function ActiveWorkout() {
+  const navigate = useNavigate()
+  const { cycleStep } = useSimulator()
+  const day = getCurrentDay(ACTIVE_ROUTINE, cycleStep)
+  const [exIndex, setExIndex] = React.useState(0)
+  const target = day.exercises[exIndex]
+  const exercise = exerciseById(target.exerciseId)!
+  const totalSets = target.targetSets
+
+  const [setsByExercise, setSetsByExercise] = React.useState<Record<string, SetLog[]>>(() =>
+    Object.fromEntries(
+      day.exercises.map((re) => [
+        re.exerciseId,
+        Array.from({ length: re.targetSets }, () => ({
+          reps: re.lastPerformance?.reps ?? (parseInt(re.targetReps) || 10),
+          weightKg: suggestNextWeight(re) ?? 20,
+        })).map((s) => ({ ...s, completed: false })),
+      ]),
+    ),
+  )
+  const sets = setsByExercise[target.exerciseId]
+  const currentSetIndex = sets.findIndex((s) => !s.completed)
+  const activeSetIndex = currentSetIndex === -1 ? sets.length - 1 : currentSetIndex
+  const completedCount = sets.filter((s) => s.completed).length
+
+  const { status, run } = useWriteStatus("Set logged")
+
+  function updateSet(idx: number, patch: Partial<SetLog>) {
+    setSetsByExercise((prev) => ({
+      ...prev,
+      [target.exerciseId]: prev[target.exerciseId].map((s, i) => (i === idx ? { ...s, ...patch } : s)),
+    }))
+  }
+
+  function logSet() {
+    run(() => updateSet(activeSetIndex, { completed: true }))
+  }
+
+  const totalPlannedSets = day.exercises.reduce((n, e) => n + e.targetSets, 0)
+  const totalCompletedSets = day.exercises.reduce(
+    (n, e) => n + (setsByExercise[e.exerciseId]?.filter((s) => s.completed).length ?? 0),
+    0,
+  )
+
+  const isLastExercise = exIndex === day.exercises.length - 1
+
+  return (
+    <div>
+      <TopBar
+        title={exercise.name}
+        action={
+          <Badge variant="secondary">
+            Ex {exIndex + 1}/{day.exercises.length}
+          </Badge>
+        }
+      />
+      <OfflineBanner />
+
+      <div className="space-y-5 px-4 py-4 pb-40">
+        <div className="flex items-center justify-between">
+          <Badge>{day.label}</Badge>
+          <span className="text-sm font-medium text-muted-foreground">
+            {totalCompletedSets}/{totalPlannedSets} sets today
+          </span>
+        </div>
+
+        <div className="flex gap-3">
+          <ExerciseThumb hasGif={exercise.hasGif} className="w-20 shrink-0" />
+          <div className="flex-1 space-y-1">
+            <p className="text-sm text-muted-foreground">
+              Target: {target.targetSets} × {target.targetReps}
+              {target.targetWeightKg ? ` @ ${target.targetWeightKg}kg` : ""}
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {/* Re-keying the checkmark (not the pip) replays its pop the instant a set
+                  flips to done — the satisfying "that registered" beat mid-set. */}
+              {sets.map((s, i) => (
+                <span
+                  key={i}
+                  className="flex size-6 items-center justify-center rounded-full text-[11px] font-semibold transition-colors duration-300"
+                  style={{
+                    backgroundColor: s.completed ? "var(--success)" : "var(--muted)",
+                    color: s.completed ? "var(--success-foreground)" : "var(--muted-foreground)",
+                  }}
+                >
+                  {s.completed ? (
+                    <Check key={`done-${i}`} className="size-3.5 animate-in zoom-in-50 duration-200 ease-out" />
+                  ) : (
+                    i + 1
+                  )}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <Card className="border-primary/30">
+          <CardContent className="space-y-4">
+            {target.lastPerformance && (
+              <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+                <History className="size-3.5" />
+                Last time: {target.lastPerformance.reps} reps @ {target.lastPerformance.weightKg}kg
+                {suggestNextWeight(target) !== target.lastPerformance.weightKg && (
+                  <span className="font-medium text-success">
+                    → suggested {suggestNextWeight(target)}kg today
+                  </span>
+                )}
+              </div>
+            )}
+            <p className="text-center text-sm font-medium text-muted-foreground">
+              Set {activeSetIndex + 1} of {totalSets}
+            </p>
+            <div className="flex items-center justify-center gap-8">
+              <div className="flex flex-col items-center gap-1.5">
+                <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Reps</span>
+                <NumberStepper
+                  value={sets[activeSetIndex].reps}
+                  onChange={(v) => updateSet(activeSetIndex, { reps: v })}
+                  min={0}
+                  size="touch"
+                />
+              </div>
+              <div className="flex flex-col items-center gap-1.5">
+                <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Weight</span>
+                <NumberStepper
+                  value={sets[activeSetIndex].weightKg}
+                  onChange={(v) => updateSet(activeSetIndex, { weightKg: v })}
+                  step={2.5}
+                  min={0}
+                  suffix="kg"
+                  size="touch"
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {completedCount > 0 && (
+          <div>
+            <p className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">Logged sets</p>
+            <div className="space-y-1.5">
+              {sets.map((s, i) =>
+                s.completed ? (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-sm animate-in fade-in slide-in-from-top-1 duration-200 ease-out"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Check className="size-3.5 text-success" /> Set {i + 1}
+                    </span>
+                    <span className="font-medium">
+                      {s.reps} reps @ {s.weightKg}kg
+                    </span>
+                  </div>
+                ) : null,
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <StickyActionBar>
+        <div key={completedCount === totalSets ? "advance" : "log"} className="flex gap-2 animate-in fade-in zoom-in-95 duration-200 ease-out">
+          {completedCount === totalSets ? (
+            isLastExercise ? (
+              <Button className="h-12 w-full text-base" onClick={() => navigate("/today")}>
+                <Check className="size-4" /> Finish workout
+              </Button>
+            ) : (
+              <Button className="h-12 w-full text-base" onClick={() => setExIndex((i) => i + 1)}>
+                Next exercise <ChevronRight className="size-4" />
+              </Button>
+            )
+          ) : (
+            <>
+              <Button
+                variant="destructive"
+                size="icon"
+                aria-label="Cancel workout"
+                className="size-12 shrink-0"
+                onClick={() => navigate("/today")}
+              >
+                <X className="size-5" />
+              </Button>
+              <Button
+                onClick={logSet}
+                disabled={status === "saving"}
+                variant={status === "failed" ? "destructive" : "default"}
+                className="h-12 flex-1 text-base"
+              >
+                {status === "saving" ? "Saving…" : status === "failed" ? "Retry — couldn't save" : "Log set"}
+              </Button>
+            </>
+          )}
+        </div>
+      </StickyActionBar>
+    </div>
+  )
+}

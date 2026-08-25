@@ -1,0 +1,21 @@
+name = "fitness-tracker-api"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Placeholder IDs below — fine for `wrangler dev` (local-only, Miniflare-emulated D1/KV,
+# no Cloudflare account needed). Replace with real IDs from `wrangler d1 create` and
+# `wrangler kv namespace create` before ever running with --remote or `wrangler deploy`.
+
+[[d1_databases]]
+binding = "DB"
+database_name = "fitness-tracker"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "../../packages/db/migrations"
+
+[[kv_namespaces]]
+binding = "SESSIONS_KV"
+id = "0000000000000000000000000000000"
+
+[vars]
+ENVIRONMENT = "development"

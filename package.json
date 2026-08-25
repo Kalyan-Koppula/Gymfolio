@@ -1,0 +1,16 @@
+{
+  "name": "fitness-tracker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n web,api -c blue,green \"pnpm --filter web dev\" \"pnpm --filter api dev\"",
+    "dev:web": "pnpm --filter web dev",
+    "dev:api": "pnpm --filter api dev",
+    "build": "pnpm --filter web build",
+    "db:generate": "pnpm --filter db generate",
+    "db:migrate:local": "pnpm --filter api migrate:local"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "api",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "migrate:local": "wrangler d1 migrations apply fitness-tracker --local",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "db": "workspace:*",
+    "shared": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.13.4"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260825.1",
+    "@types/node": "^26.3.0",
+    "typescript": "~6.0.2",
+    "wrangler": "^4.125.0"
+  }
+}

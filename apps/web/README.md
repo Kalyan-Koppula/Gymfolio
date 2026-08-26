@@ -2,7 +2,7 @@
 
 The frontend for the self-hosted fitness tracker (shadcn/ui, "new-york" style, Tailwind v4).
 Part of the monorepo at the repo root — see `../api` for the backend and
-`../../fitness-tracker-architecture.md` for the full design.
+`../../.refdocs/fitness-tracker-architecture.md` for the full design.
 
 ## Run it
 
@@ -20,16 +20,26 @@ proxy in `vite.config.ts`:
 pnpm --filter web dev
 ```
 
-## What's real vs. still fixture data
+## What's real vs. still fixture / deferred
 
-- **Real, backed by the API**: authentication, weight tracking, hydration, sleep, and macro
-  logging — all persist through `src/lib/api-client.ts` to the Worker/D1 backend in `../api`.
-- **Still fixture data** (`src/lib/stub-data.ts`): the exercise library, equipment profile,
-  routine builder, and adherence history — these modules don't have a backend yet (see the
-  architecture doc's §12 build order). Their shapes already mirror the eventual API contracts,
-  so wiring each one up is a data-source swap, not a redesign.
-- AI flows (equipment detection, routine generation) are simulated with timers, not a real
-  model call, until the BYOK adapter (architecture §7) is built.
+- **Real, backed by the API**: authentication (password + passkeys), family invites/members,
+  weight / hydration / sleep / macros, user settings & equipment, routines, **workout set
+  logging**, adherence & recent sessions, exercise library (seeded D1), account sessions &
+  password change, BYOK AI config (encrypted server-side).
+- **Client constants only** (`src/lib/stub-data.ts`): split presets, schedule helpers,
+  equipment labels, AI provider *labels* — not fake user data.
+- **Partial / deferred**:
+  - Exercise media: run `pnpm seed:media` from repo root to load free-exercise-db photos into
+    local R2 + D1 (~870 exercises). WebP thumb + stills served from
+    `/api/media/exercises/:id/thumb.webp`, `/start.webp`, and `/end.webp` (JPEG fallback if
+    present). Preview presets with `pnpm preview:gifs`. See root `ATTRIBUTION.md`.
+  - YouTube lazy-fetch: `POST /api/exercises/:id/youtube` on detail open when `YOUTUBE_API_KEY`
+    is set on the worker; quota tracked in KV.
+  - AI detect/generate: real config + degrade path; vision/LLM vendor calls are still
+    heuristic until a full provider adapter is plugged in.
+  - Appearance theme: localStorage only (by design for v0).
+- PWA: `vite-plugin-pwa` precaches the app shell, network-first caches `/api/exercises`,
+  network-only for other `/api` writes, cache-first for exercise GIFs.
 
 ## Theming
 

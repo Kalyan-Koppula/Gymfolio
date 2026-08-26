@@ -7,4 +7,7 @@ dist/
 *.log
 .DS_Store
 .turbo/
+.cache/
 .refdocs/
+.pnpm-store/
+_tmp_*

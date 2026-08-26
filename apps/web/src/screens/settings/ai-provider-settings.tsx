@@ -6,12 +6,15 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { CheckCircle2, Eye, EyeOff, Loader2, ShieldAlert, ShieldCheck } from "lucide-react"
+import { CheckCircle2, Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react"
 import { useAiProvider } from "@/contexts/ai-provider-context"
 import { AI_PROVIDERS } from "@/lib/stub-data"
+import { saveAiConfig, testAiConfig } from "@/lib/api-client"
+import type { AiProviderId } from "shared"
+import { toast } from "sonner"
 
 export function AiProviderSettings() {
-  const { configured, setConfigured, provider, setProvider } = useAiProvider()
+  const { configured, setConfigured, provider, setProvider, refresh } = useAiProvider()
   const [apiKey, setApiKey] = React.useState("")
   const [showKey, setShowKey] = React.useState(false)
   const [endpoint, setEndpoint] = React.useState("")
@@ -19,13 +22,28 @@ export function AiProviderSettings() {
 
   const current = AI_PROVIDERS.find((p) => p.id === provider)!
 
-  function test() {
+  async function saveAndTest() {
     setTestStatus("testing")
-    window.setTimeout(() => {
-      const ok = apiKey.trim().length > 0
-      setTestStatus(ok ? "ok" : "fail")
-      setConfigured(ok)
-    }, 1100)
+    try {
+      await saveAiConfig({
+        provider,
+        apiKey,
+        endpointOverride: provider === "local" ? endpoint : "",
+      })
+      const result = await testAiConfig()
+      if (result.ok) {
+        setTestStatus("ok")
+        setConfigured(true)
+        await refresh()
+        toast.success("Provider saved")
+      } else {
+        setTestStatus("fail")
+        toast.error(result.reason ?? "Test failed")
+      }
+    } catch (err) {
+      setTestStatus("fail")
+      toast.error(err instanceof Error ? err.message : "Couldn't save provider")
+    }
   }
 
   return (
@@ -37,14 +55,14 @@ export function AiProviderSettings() {
           <AlertTitle>No key configured is a normal, supported state</AlertTitle>
           <AlertDescription>
             Equipment detection and AI routine generation fall back to their manual equivalents everywhere
-            in the app until you add one.
+            in the app until you add one. Keys are encrypted server-side — never stored in the browser.
           </AlertDescription>
         </Alert>
 
         {configured && testStatus === "idle" && (
           <div className="flex items-center gap-2 rounded-lg bg-success/15 px-3 py-2 text-sm text-success">
-            <CheckCircle2 className="size-4" />A provider was previously confirmed on this device. Re-enter your
-            key below only if you need to change or re-verify it.
+            <CheckCircle2 className="size-4" />A provider is configured for this account. Re-enter your key
+            below only if you need to change it.
           </div>
         )}
 
@@ -54,10 +72,10 @@ export function AiProviderSettings() {
               <Label>Provider</Label>
               <Select
                 value={provider}
-                onValueChange={(v) => setProvider(v as typeof provider)}
+                onValueChange={(v) => setProvider(v as AiProviderId)}
                 items={Object.fromEntries(AI_PROVIDERS.map((p) => [p.id, p.label]))}
               >
-                <SelectTrigger className="h-11 w-full text-base">
+                <SelectTrigger className="h-11 w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -68,7 +86,6 @@ export function AiProviderSettings() {
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">Models: {current.models.join(", ")}</p>
             </div>
 
             <div className="space-y-1.5">
@@ -77,60 +94,52 @@ export function AiProviderSettings() {
                 <Input
                   id="api-key"
                   type={showKey ? "text" : "password"}
-                  value={apiKey}
-                  onChange={(e) => {
-                    setApiKey(e.target.value)
-                    setTestStatus("idle")
-                  }}
+                  className="h-11 pr-10 text-base"
                   placeholder="Paste your provider key"
-                  className="h-11 pr-11 text-base"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
                 />
                 <button
                   type="button"
-                  onClick={() => setShowKey((v) => !v)}
+                  className="absolute top-1/2 right-2 -translate-y-1/2 p-1 text-muted-foreground"
+                  onClick={() => setShowKey((s) => !s)}
                   aria-label={showKey ? "Hide key" : "Show key"}
-                  className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground hover:text-foreground"
                 >
                   {showKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                 </button>
               </div>
-              <p className="text-xs text-muted-foreground">Encrypted at rest, never logged.</p>
+              <p className="text-xs text-muted-foreground">Models: {current.models.join(", ")}</p>
             </div>
 
             {provider === "local" && (
               <div className="space-y-1.5">
-                <Label htmlFor="endpoint">Endpoint override</Label>
+                <Label htmlFor="endpoint">Endpoint</Label>
                 <Input
                   id="endpoint"
+                  className="h-11 text-base"
+                  placeholder="http://localhost:11434"
                   value={endpoint}
                   onChange={(e) => setEndpoint(e.target.value)}
-                  placeholder="http://localhost:11434"
-                  className="h-11 text-base"
                 />
               </div>
             )}
 
-            <Button variant="outline" className="h-11 w-full text-base" onClick={test} disabled={testStatus === "testing"}>
+            <Button className="h-11 w-full" onClick={() => void saveAndTest()} disabled={testStatus === "testing" || !apiKey.trim()}>
               {testStatus === "testing" ? (
                 <>
-                  <Loader2 className="size-4 animate-spin" /> Testing connection…
+                  <Loader2 className="size-4 animate-spin" /> Saving…
                 </>
               ) : (
-                "Test connection"
+                "Save & test connection"
               )}
             </Button>
 
             {testStatus === "ok" && (
-              <div className="flex items-center gap-2 rounded-lg bg-success/15 px-3 py-2 text-sm text-success animate-in fade-in zoom-in-95 duration-200 ease-out">
-                <CheckCircle2 className="size-4 animate-in zoom-in-50 duration-300 ease-out" /> Connected —{" "}
-                {current.label} is ready to use.
-              </div>
+              <p className="flex items-center gap-1.5 text-sm text-success">
+                <CheckCircle2 className="size-4" /> Connection confirmed
+              </p>
             )}
-            {testStatus === "fail" && (
-              <div className="flex items-center gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive animate-in fade-in zoom-in-95 duration-200 ease-out">
-                <ShieldAlert className="size-4" /> Couldn't connect — check the key and try again.
-              </div>
-            )}
+            {testStatus === "fail" && <p className="text-sm text-destructive">Couldn’t verify the key — try again.</p>}
           </CardContent>
         </Card>
       </div>

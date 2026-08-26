@@ -36,3 +36,17 @@ export const HasAccountResponseSchema = z.object({
   hasAccount: z.boolean(),
 })
 export type HasAccountResponse = z.infer<typeof HasAccountResponseSchema>
+
+export const SessionListItemSchema = z.object({
+  id: z.string(),
+  lastActive: z.string(),
+  current: z.boolean(),
+  expiresAt: z.number(),
+})
+export type SessionListItem = z.infer<typeof SessionListItemSchema>
+
+export const ChangePasswordInputSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(12).max(256),
+})
+export type ChangePasswordInput = z.infer<typeof ChangePasswordInputSchema>

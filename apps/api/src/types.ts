@@ -7,6 +7,9 @@ export type Bindings = {
   WEBAUTHN_RP_ID: string
   WEBAUTHN_RP_NAME: string
   WEBAUTHN_ORIGIN: string
+  MASTER_KEY?: string
+  YOUTUBE_API_KEY?: string
+  MEDIA?: R2Bucket
 }
 
 export type AuthContext = {

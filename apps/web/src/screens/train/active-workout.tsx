@@ -12,28 +12,52 @@ import { Card, CardContent } from "@/components/ui/card"
 import { NumberStepper } from "@/components/shared/number-stepper"
 import { StickyActionBar } from "@/components/shared/sticky-action-bar"
 import { Button } from "@/components/ui/button"
-import { useWriteStatus } from "@/hooks/use-write-status"
-import { getRoutine } from "@/lib/api-client"
-import { currentCycleStep, exerciseById, getCurrentDay, suggestNextWeight, type RoutineDay } from "@/lib/stub-data"
-import type { Routine } from "shared"
+import { useApiWrite } from "@/hooks/use-api-write"
+import { useExercises } from "@/hooks/use-exercises"
+import {
+  finishWorkout,
+  getCycleStep,
+  getLastPerformances,
+  getRoutine,
+  logWorkoutSet,
+  startWorkout,
+} from "@/lib/api-client"
+import { getCurrentDay, suggestNextWeight, type RoutineDay } from "@/lib/stub-data"
+import type { LastPerformance, Routine } from "shared"
 
 type SetLog = { reps: number; weightKg: number; completed: boolean }
 
+function todayIso() {
+  return new Date().toISOString().slice(0, 10)
+}
+
 export function ActiveWorkout() {
   const navigate = useNavigate()
-  // undefined = still loading, null = confirmed no routine exists yet
+  const { byId, loading: exercisesLoading } = useExercises()
   const [routine, setRoutine] = React.useState<Routine | null | undefined>(undefined)
+  const [cycleStep, setCycleStep] = React.useState(0)
+  const [performances, setPerformances] = React.useState<LastPerformance[]>([])
 
   React.useEffect(() => {
     getRoutine()
-      .then((res) => setRoutine(res.routine))
+      .then(async (res) => {
+        const r = res.routine
+        setRoutine(r)
+        if (r && r.days.length > 0) {
+          const step = await getCycleStep(r.days.length)
+          setCycleStep(step.cycleStep)
+        }
+      })
       .catch(() => {
         setRoutine(null)
         toast.error("Couldn't load your routine")
       })
+    getLastPerformances()
+      .then((res) => setPerformances(res.performances))
+      .catch(() => {})
   }, [])
 
-  if (routine === undefined) {
+  if (routine === undefined || exercisesLoading) {
     return (
       <div className="space-y-4 px-4 py-4">
         <Skeleton className="h-8 w-40" />
@@ -56,15 +80,41 @@ export function ActiveWorkout() {
     )
   }
 
-  const day = getCurrentDay(routine, currentCycleStep())
-  return <ActiveWorkoutSession key={day.id} day={day} />
+  const day = getCurrentDay(routine, cycleStep)
+  const dayWithPerf: RoutineDay = {
+    ...day,
+    exercises: day.exercises.map((re) => {
+      const perf = performances.find((p) => p.exerciseId === re.exerciseId)
+      return perf
+        ? { ...re, lastPerformance: { reps: perf.reps, weightKg: perf.weightKg, date: perf.date } }
+        : re
+    }),
+  }
+
+  return (
+    <ActiveWorkoutSession
+      key={day.id}
+      day={dayWithPerf}
+      dayIndex={cycleStep % routine.days.length}
+      byId={byId}
+    />
+  )
 }
 
-function ActiveWorkoutSession({ day }: { day: RoutineDay }) {
+function ActiveWorkoutSession({
+  day,
+  dayIndex,
+  byId,
+}: {
+  day: RoutineDay
+  dayIndex: number
+  byId: (id: string) => import("shared").Exercise | undefined
+}) {
   const navigate = useNavigate()
   const [exIndex, setExIndex] = React.useState(0)
+  const [workoutId, setWorkoutId] = React.useState<string | null>(null)
   const target = day.exercises[exIndex]
-  const exercise = exerciseById(target.exerciseId)!
+  const exercise = byId(target.exerciseId)
   const totalSets = target.targetSets
 
   const [setsByExercise, setSetsByExercise] = React.useState<Record<string, SetLog[]>>(() =>
@@ -83,7 +133,44 @@ function ActiveWorkoutSession({ day }: { day: RoutineDay }) {
   const activeSetIndex = currentSetIndex === -1 ? sets.length - 1 : currentSetIndex
   const completedCount = sets.filter((s) => s.completed).length
 
-  const { status, run } = useWriteStatus("Set logged")
+  const { status, run } = useApiWrite("Set logged")
+  const { status: finishStatus, run: runFinish } = useApiWrite("Workout saved")
+
+  const totalPlannedSets = day.exercises.reduce((n, e) => n + e.targetSets, 0)
+
+  React.useEffect(() => {
+    let cancelled = false
+    startWorkout({
+      date: todayIso(),
+      dayLabel: day.label,
+      dayIndex,
+      setsPlanned: totalPlannedSets,
+    })
+      .then((res) => {
+        if (cancelled) return
+        setWorkoutId(res.workout.id)
+        // Restore already-logged sets if resuming.
+        if (res.workout.sets && res.workout.sets.length > 0) {
+          setSetsByExercise((prev) => {
+            const next = { ...prev }
+            for (const logged of res.workout.sets!) {
+              const arr = next[logged.exerciseId]
+              if (!arr || !arr[logged.setIndex]) continue
+              arr[logged.setIndex] = {
+                reps: logged.actualReps,
+                weightKg: logged.actualWeightKg,
+                completed: true,
+              }
+            }
+            return { ...next }
+          })
+        }
+      })
+      .catch(() => toast.error("Couldn't start workout session"))
+    return () => {
+      cancelled = true
+    }
+  }, [day.label, dayIndex, totalPlannedSets])
 
   function updateSet(idx: number, patch: Partial<SetLog>) {
     setSetsByExercise((prev) => ({
@@ -93,16 +180,54 @@ function ActiveWorkoutSession({ day }: { day: RoutineDay }) {
   }
 
   function logSet() {
-    run(() => updateSet(activeSetIndex, { completed: true }))
+    if (!workoutId) {
+      toast.error("Workout session isn't ready yet")
+      return
+    }
+    const active = sets[activeSetIndex]
+    run(
+      () =>
+        logWorkoutSet(workoutId, {
+          exerciseId: target.exerciseId,
+          setIndex: activeSetIndex,
+          actualReps: active.reps,
+          actualWeightKg: active.weightKg,
+        }),
+      () => updateSet(activeSetIndex, { completed: true }),
+    )
   }
 
-  const totalPlannedSets = day.exercises.reduce((n, e) => n + e.targetSets, 0)
+  function finish() {
+    if (!workoutId) {
+      navigate("/today")
+      return
+    }
+    runFinish(
+      () => finishWorkout(workoutId),
+      () => navigate("/today"),
+    )
+  }
+
   const totalCompletedSets = day.exercises.reduce(
     (n, e) => n + (setsByExercise[e.exerciseId]?.filter((s) => s.completed).length ?? 0),
     0,
   )
 
   const isLastExercise = exIndex === day.exercises.length - 1
+
+  if (!exercise) {
+    return (
+      <div className="px-4 py-8">
+        <EmptyState
+          icon={ListChecks}
+          title="Exercise not found"
+          description="This routine references an exercise that isn't in the library."
+          actionLabel="Back to Today"
+          onAction={() => navigate("/today")}
+        />
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -125,15 +250,13 @@ function ActiveWorkoutSession({ day }: { day: RoutineDay }) {
         </div>
 
         <div className="flex gap-3">
-          <ExerciseThumb hasGif={exercise.hasGif} className="w-20 shrink-0" />
+          <ExerciseThumb hasGif={exercise.hasGif} exerciseId={exercise.id} className="w-20 shrink-0" />
           <div className="flex-1 space-y-1">
             <p className="text-sm text-muted-foreground">
               Target: {target.targetSets} × {target.targetReps}
               {target.targetWeightKg ? ` @ ${target.targetWeightKg}kg` : ""}
             </p>
             <div className="flex flex-wrap gap-1">
-              {/* Re-keying the checkmark (not the pip) replays its pop the instant a set
-                  flips to done — the satisfying "that registered" beat mid-set. */}
               {sets.map((s, i) => (
                 <span
                   key={i}
@@ -223,8 +346,13 @@ function ActiveWorkoutSession({ day }: { day: RoutineDay }) {
         <div key={completedCount === totalSets ? "advance" : "log"} className="flex gap-2 animate-in fade-in zoom-in-95 duration-200 ease-out">
           {completedCount === totalSets ? (
             isLastExercise ? (
-              <Button className="h-12 w-full text-base" onClick={() => navigate("/today")}>
-                <Check className="size-4" /> Finish workout
+              <Button
+                className="h-12 w-full text-base"
+                onClick={finish}
+                disabled={finishStatus === "saving"}
+              >
+                <Check className="size-4" />{" "}
+                {finishStatus === "saving" ? "Saving…" : "Finish workout"}
               </Button>
             ) : (
               <Button className="h-12 w-full text-base" onClick={() => setExIndex((i) => i + 1)}>
@@ -244,7 +372,7 @@ function ActiveWorkoutSession({ day }: { day: RoutineDay }) {
               </Button>
               <Button
                 onClick={logSet}
-                disabled={status === "saving"}
+                disabled={status === "saving" || !workoutId}
                 variant={status === "failed" ? "destructive" : "default"}
                 className="h-12 flex-1 text-base"
               >

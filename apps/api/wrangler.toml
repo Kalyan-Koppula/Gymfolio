@@ -17,8 +17,18 @@ migrations_dir = "../../packages/db/migrations"
 binding = "SESSIONS_KV"
 id = "0000000000000000000000000000000"
 
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "fitness-tracker-media"
+preview_bucket_name = "fitness-tracker-media"
+
 [vars]
 ENVIRONMENT = "development"
+# Dev-only fallback so BYOK encrypt/decrypt works under `wrangler dev` without secrets.
+# Replace via `wrangler secret put MASTER_KEY` before any remote deploy.
+MASTER_KEY = "dev-only-master-key-replace-before-deploy"
+# Optional — enables lazy YouTube reference lookup on exercise detail (FR-4.5).
+# YOUTUBE_API_KEY = ""
 # WebAuthn relying-party config — rpID must be the bare domain (no scheme/port); the browser
 # only allows a credential to be used on the exact rpID (or a parent domain) it was created
 # under. Update all three before deploying to a real domain.

@@ -11,6 +11,7 @@ import { SchedulePicker } from "@/components/routine/schedule-picker"
 import { useScheduleState } from "@/hooks/use-schedule-state"
 import { useApiWrite } from "@/hooks/use-api-write"
 import { getSettings, saveRoutine } from "@/lib/api-client"
+import { fetchExercises } from "@/hooks/use-exercises"
 import {
   SPLIT_PRESETS,
   autofillDayExercises,
@@ -41,24 +42,34 @@ export function RoutineWizard() {
       .catch(() => {})
   }, [])
 
-  function seedDays() {
+  async function seedDays() {
     if (!splitType) return
     const preset = SPLIT_PRESETS.find((p) => p.id === splitType)!
     const labels =
       preset.dayLabels.length > 0
         ? preset.dayLabels
         : Array.from({ length: scheduleState.scheduleMode === "weekly" ? scheduleState.daysPerWeek : schedule.mode === "rotating" ? schedule.workDays : 3 }, (_, i) => `Day ${i + 1}`)
+    const pool = await fetchExercises()
+    let gear = equipment
+    if (gear.length === 0) {
+      try {
+        gear = (await getSettings()).equipment
+        setEquipment(gear)
+      } catch {
+        // seed without equipment filter
+      }
+    }
     const seeded: RoutineDay[] = labels.map((label, i) => ({
       id: `wizard-day-${i + 1}`,
       label,
-      exercises: autofillDayExercises(label, equipment),
+      exercises: autofillDayExercises(label, gear, pool),
     }))
     setDays(seeded)
     setActiveDay(seeded[0]?.id ?? "")
   }
 
-  function next() {
-    if (step === 1) seedDays()
+  async function next() {
+    if (step === 1) await seedDays()
     setStep((s) => Math.min(s + 1, STEPS.length - 1))
   }
 
@@ -126,7 +137,13 @@ export function RoutineWizard() {
                 {splitType && SPLIT_PRESETS.find((p) => p.id === splitType)?.label} · {describeSchedule(schedule)}
               </p>
             </div>
-            <RoutineDaysEditor days={days} setDays={setDays} activeDay={activeDay} onActiveDayChange={setActiveDay} />
+            <RoutineDaysEditor
+              days={days}
+              setDays={setDays}
+              activeDay={activeDay}
+              onActiveDayChange={setActiveDay}
+              equipment={equipment}
+            />
           </div>
         )}
       </div>

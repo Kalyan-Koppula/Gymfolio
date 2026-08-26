@@ -25,7 +25,8 @@ import {
   type RoutineDay,
   type SplitType,
 } from "@/lib/stub-data"
-import { register, saveSettings, saveRoutine, ApiError } from "@/lib/api-client"
+import { register, saveSettings, saveRoutine, detectEquipment, ApiError } from "@/lib/api-client"
+import { fetchExercises } from "@/hooks/use-exercises"
 
 const STEPS = ["Account", "Hydration goal", "Macro target", "Equipment", "Split", "Schedule", "Review & edit days"]
 const [ACCOUNT, HYDRATION, MACRO, EQUIPMENT, SPLIT, SCHEDULE, REVIEW] = [0, 1, 2, 3, 4, 5, 6]
@@ -104,7 +105,7 @@ export function Onboarding() {
     }
   }
 
-  function seedDays() {
+  async function seedDays() {
     if (!splitType) return
     const preset = SPLIT_PRESETS.find((p) => p.id === splitType)!
     const labels =
@@ -115,10 +116,11 @@ export function Onboarding() {
             (_, i) => `Day ${i + 1}`,
           )
     const equipment = Array.from(selectedEquipment)
+    const pool = await fetchExercises()
     const seeded: RoutineDay[] = labels.map((label, i) => ({
       id: `onboarding-day-${i + 1}`,
       label,
-      exercises: autofillDayExercises(label, equipment),
+      exercises: autofillDayExercises(label, equipment, pool),
     }))
     setDays(seeded)
     setActiveDay(seeded[0]?.id ?? "")
@@ -161,13 +163,13 @@ export function Onboarding() {
     )
   }
 
-  function next() {
+  async function next() {
     if (step === ACCOUNT) {
       void createAccount()
       return
     }
     if (step === SCHEDULE) {
-      seedDays()
+      await seedDays()
       setStep(REVIEW)
       return
     }
@@ -178,12 +180,19 @@ export function Onboarding() {
     setStep((s) => s + 1)
   }
 
-  function runDetection() {
+  async function runDetection() {
     setDetectState("detecting")
-    window.setTimeout(() => {
-      setSelectedEquipment(new Set<Equipment>(["barbell", "dumbbell", "bench", "squat-rack"]))
+    try {
+      const res = await detectEquipment()
+      if (res.degraded || res.equipment.length === 0) {
+        setSelectedEquipment(new Set<Equipment>(["barbell", "dumbbell", "bench", "squat-rack"]))
+      } else {
+        setSelectedEquipment(new Set(res.equipment))
+      }
       setDetectState("done")
-    }, 1600)
+    } catch {
+      setDetectState("idle")
+    }
   }
 
   function toggleEquipment(eq: Equipment) {
@@ -470,7 +479,13 @@ export function Onboarding() {
                 {splitType && SPLIT_PRESETS.find((p) => p.id === splitType)?.label} · {describeSchedule(schedule)}
               </p>
             </div>
-            <RoutineDaysEditor days={days} setDays={setDays} activeDay={activeDay} onActiveDayChange={setActiveDay} />
+            <RoutineDaysEditor
+              days={days}
+              setDays={setDays}
+              activeDay={activeDay}
+              onActiveDayChange={setActiveDay}
+              equipment={Array.from(selectedEquipment)}
+            />
           </div>
         )}
       </div>

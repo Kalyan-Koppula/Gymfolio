@@ -9,7 +9,7 @@ export function ExerciseCard({ exercise }: { exercise: Exercise }) {
       to={`/train/exercise/${exercise.id}`}
       className="flex gap-3 rounded-xl border border-border bg-card p-3 transition-all duration-150 hover:bg-muted/50 active:scale-[0.98] focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
     >
-      <ExerciseThumb hasGif={exercise.hasGif} className="w-20 shrink-0" />
+      <ExerciseThumb hasGif={exercise.hasGif} exerciseId={exercise.id} className="w-20 shrink-0" />
       <div className="min-w-0 flex-1 space-y-1.5">
         <p className="truncate font-medium leading-tight">{exercise.name}</p>
         <div className="flex flex-wrap gap-1">

@@ -10,6 +10,11 @@ import { memberRoutes } from "./routes/members.ts"
 import { passkeyRoutes } from "./routes/passkeys.ts"
 import { settingsRoutes } from "./routes/settings.ts"
 import { routineRoutes } from "./routes/routines.ts"
+import { workoutRoutes } from "./routes/workouts.ts"
+import { exerciseRoutes } from "./routes/exercises.ts"
+import { accountRoutes } from "./routes/account.ts"
+import { aiRoutes } from "./routes/ai.ts"
+import { mediaRoutes } from "./routes/media.ts"
 import type { AppEnv } from "./types.ts"
 
 const app = new Hono<AppEnv>()
@@ -28,5 +33,10 @@ app.route("/api/members", memberRoutes)
 app.route("/api/auth/passkey", passkeyRoutes)
 app.route("/api/settings", settingsRoutes)
 app.route("/api/routines", routineRoutes)
+app.route("/api/workouts", workoutRoutes)
+app.route("/api/exercises", exerciseRoutes)
+app.route("/api/account", accountRoutes)
+app.route("/api/ai", aiRoutes)
+app.route("/api/media", mediaRoutes)
 
 export default app

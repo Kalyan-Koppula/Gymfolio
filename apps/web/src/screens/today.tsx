@@ -11,9 +11,17 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Skeleton } from "@/components/ui/skeleton"
-import { getHydrationToday, getMacrosForDate, getSettings, getRoutine } from "@/lib/api-client"
-import type { UserSettings, Routine } from "shared"
-import { RECENT_SESSIONS, currentCycleStep, describeSchedule, exerciseById, getCurrentDay } from "@/lib/stub-data"
+import {
+  getHydrationToday,
+  getMacrosForDate,
+  getSettings,
+  getRoutine,
+  getRecentWorkouts,
+  getCycleStep,
+} from "@/lib/api-client"
+import { useExercises } from "@/hooks/use-exercises"
+import type { UserSettings, Routine, WorkoutSessionSummary } from "shared"
+import { describeSchedule, getCurrentDay } from "@/lib/stub-data"
 
 function greeting() {
   const hour = new Date().getHours()
@@ -24,7 +32,7 @@ function greeting() {
 
 export function Today() {
   const navigate = useNavigate()
-  const lastSession = RECENT_SESSIONS[0]
+  const { byId } = useExercises()
   const todayDate = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(
     new Date(),
   )
@@ -32,8 +40,9 @@ export function Today() {
   const [hydrationMl, setHydrationMl] = React.useState<number | null>(null)
   const [proteinG, setProteinG] = React.useState<number | null>(null)
   const [settings, setSettings] = React.useState<UserSettings | null>(null)
-  // undefined = still loading, null = confirmed no routine exists yet
   const [routine, setRoutine] = React.useState<Routine | null | undefined>(undefined)
+  const [cycleStep, setCycleStep] = React.useState(0)
+  const [lastSession, setLastSession] = React.useState<WorkoutSessionSummary | null | undefined>(undefined)
 
   React.useEffect(() => {
     getHydrationToday()
@@ -46,11 +55,19 @@ export function Today() {
       .then(setSettings)
       .catch(() => toast.error("Couldn't load your settings"))
     getRoutine()
-      .then((res) => setRoutine(res.routine))
+      .then(async (res) => {
+        setRoutine(res.routine)
+        if (res.routine && res.routine.days.length > 0) {
+          const step = await getCycleStep(res.routine.days.length)
+          setCycleStep(step.cycleStep)
+        }
+      })
       .catch(() => setRoutine(null))
+    getRecentWorkouts(1)
+      .then((res) => setLastSession(res.sessions[0] ?? null))
+      .catch(() => setLastSession(null))
   }, [])
 
-  const cycleStep = currentCycleStep()
   const today = routine ? getCurrentDay(routine, cycleStep) : null
   const dayPosition = routine ? (cycleStep % routine.days.length) + 1 : 0
 
@@ -89,9 +106,9 @@ export function Today() {
                   <div
                     key={re.exerciseId}
                     className="flex size-9 items-center justify-center rounded-full border-2 border-card bg-muted text-[10px] font-medium text-muted-foreground"
-                    title={exerciseById(re.exerciseId)?.name}
+                    title={byId(re.exerciseId)?.name}
                   >
-                    {exerciseById(re.exerciseId)?.name.slice(0, 2)}
+                    {byId(re.exerciseId)?.name.slice(0, 2) ?? "?"}
                   </div>
                 ))}
               </div>
@@ -166,17 +183,27 @@ export function Today() {
               View history <ChevronRight className="size-3.5" />
             </Link>
           </div>
-          <Card className="py-3">
-            <CardContent className="flex items-center justify-between px-3.5">
-              <div>
-                <p className="text-sm font-medium">{lastSession.dayLabel}</p>
-                <p className="text-xs text-muted-foreground">{lastSession.date}</p>
-              </div>
-              <Badge variant={lastSession.completionPct === 100 ? "default" : "secondary"}>
-                {lastSession.completionPct}% complete
-              </Badge>
-            </CardContent>
-          </Card>
+          {lastSession === undefined ? (
+            <Skeleton className="h-16 w-full rounded-xl" />
+          ) : lastSession ? (
+            <Card className="py-3">
+              <CardContent className="flex items-center justify-between px-3.5">
+                <div>
+                  <p className="text-sm font-medium">{lastSession.dayLabel}</p>
+                  <p className="text-xs text-muted-foreground">{lastSession.date}</p>
+                </div>
+                <Badge variant={lastSession.completionPct === 100 ? "default" : "secondary"}>
+                  {lastSession.completionPct}% complete
+                </Badge>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="py-3">
+              <CardContent className="px-3.5 text-sm text-muted-foreground">
+                No completed workouts yet — finish one to see it here.
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>

@@ -43,6 +43,26 @@ import {
   type UpsertUserSettingsInput,
   type Routine,
   type SaveRoutineInput,
+  WorkoutLogSchema,
+  WorkoutLogSetSchema,
+  WorkoutSessionSummarySchema,
+  AdherenceWeekSchema,
+  LastPerformanceSchema,
+  StartWorkoutInputSchema,
+  LogWorkoutSetInputSchema,
+  ExerciseSchema,
+  AiProviderConfigSchema,
+  UpsertAiProviderInputSchema,
+  DetectEquipmentResponseSchema,
+  GenerateRoutineResponseSchema,
+  SessionListItemSchema,
+  ChangePasswordInputSchema,
+  type StartWorkoutInput,
+  type LogWorkoutSetInput,
+  type UpsertAiProviderInput,
+  type GenerateRoutineInput,
+  type ChangePasswordInput,
+  type Exercise,
 } from "shared"
 
 export class ApiError extends Error {
@@ -231,4 +251,113 @@ export function getRoutine(): Promise<{ routine: Routine | null }> {
 export function saveRoutine(input: SaveRoutineInput): Promise<{ routine: Routine }> {
   SaveRoutineInputSchema.parse(input)
   return request("/routines", { method: "PUT", body: JSON.stringify(input) }, z.object({ routine: RoutineSchema }))
+}
+
+// --- workouts ---
+export function startWorkout(input: StartWorkoutInput) {
+  StartWorkoutInputSchema.parse(input)
+  return request("/workouts/start", { method: "POST", body: JSON.stringify(input) }, z.object({ workout: WorkoutLogSchema }))
+}
+
+export function logWorkoutSet(workoutId: string, input: LogWorkoutSetInput) {
+  LogWorkoutSetInputSchema.parse(input)
+  return request(
+    `/workouts/${workoutId}/sets`,
+    { method: "POST", body: JSON.stringify(input) },
+    z.object({ set: WorkoutLogSetSchema, setsCompleted: z.number() }),
+  )
+}
+
+export function finishWorkout(workoutId: string) {
+  return request(`/workouts/${workoutId}/finish`, { method: "POST" }, z.object({ workout: WorkoutLogSchema }))
+}
+
+export function getRecentWorkouts(limit = 10) {
+  return request(
+    `/workouts/recent?limit=${limit}`,
+    { method: "GET" },
+    z.object({ sessions: z.array(WorkoutSessionSummarySchema) }),
+  )
+}
+
+export function getAdherenceHistory(weeks = 12) {
+  return request(
+    `/workouts/adherence?weeks=${weeks}`,
+    { method: "GET" },
+    z.object({ history: z.array(AdherenceWeekSchema) }),
+  )
+}
+
+export function getCycleStep(dayCount: number) {
+  return request(
+    `/workouts/cycle-step?dayCount=${dayCount}`,
+    { method: "GET" },
+    z.object({ cycleStep: z.number(), lastDayIndex: z.number().nullable() }),
+  )
+}
+
+export function getLastPerformances() {
+  return request(
+    "/workouts/last-performance",
+    { method: "GET" },
+    z.object({ performances: z.array(LastPerformanceSchema) }),
+  )
+}
+
+// --- exercises ---
+export function listExercises(params?: { q?: string; muscle?: string; equipment?: string }) {
+  const qs = new URLSearchParams()
+  if (params?.q) qs.set("q", params.q)
+  if (params?.muscle) qs.set("muscle", params.muscle)
+  if (params?.equipment) qs.set("equipment", params.equipment)
+  const query = qs.toString()
+  return request(`/exercises${query ? `?${query}` : ""}`, { method: "GET" }, z.object({ exercises: z.array(ExerciseSchema), total: z.number().optional() }))
+}
+
+export function fetchExerciseYoutube(id: string): Promise<{ exercise: Exercise }> {
+  return request(`/exercises/${id}/youtube`, { method: "POST" }, z.object({ exercise: ExerciseSchema }))
+}
+
+export function getExercise(id: string): Promise<{ exercise: Exercise }> {
+  return request(`/exercises/${id}`, { method: "GET" }, z.object({ exercise: ExerciseSchema }))
+}
+
+// --- account ---
+export function listSessions() {
+  return request("/account/sessions", { method: "GET" }, z.object({ sessions: z.array(SessionListItemSchema) }))
+}
+
+export function revokeSession(id: string) {
+  return request<undefined>(`/account/sessions/${id}`, { method: "DELETE" }, z.undefined())
+}
+
+export function changePassword(input: ChangePasswordInput) {
+  ChangePasswordInputSchema.parse(input)
+  return request("/account/change-password", { method: "POST", body: JSON.stringify(input) }, z.object({ ok: z.literal(true) }))
+}
+
+// --- AI ---
+export function getAiConfig() {
+  return request("/ai/config", { method: "GET" }, AiProviderConfigSchema)
+}
+
+export function saveAiConfig(input: UpsertAiProviderInput) {
+  UpsertAiProviderInputSchema.parse(input)
+  return request("/ai/config", { method: "PUT", body: JSON.stringify(input) }, AiProviderConfigSchema)
+}
+
+export function testAiConfig() {
+  return request("/ai/test", { method: "POST" }, z.object({ ok: z.boolean(), reason: z.string().optional() }))
+}
+
+export function detectEquipment(imageBase64?: string) {
+  return request(
+    "/ai/detect-equipment",
+    { method: "POST", body: JSON.stringify({ imageBase64 }) },
+    DetectEquipmentResponseSchema,
+  )
+}
+
+export function generateRoutineAi(input: GenerateRoutineInput) {
+  return request("/ai/generate-routine", { method: "POST", body: JSON.stringify(input) }, GenerateRoutineResponseSchema)
 }

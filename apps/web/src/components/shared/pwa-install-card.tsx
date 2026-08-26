@@ -30,7 +30,8 @@ export function PwaInstallCard() {
           <p className="text-muted-foreground">
             Tap <Share className="inline size-3.5 -translate-y-0.5" aria-label="Share icon" /> in
             Safari's toolbar, then <span className="font-medium text-foreground">Add to Home Screen</span>.
-            It'll open full-screen and cache the exercise library for offline browsing.
+            It opens full-screen; the service worker caches the app shell and exercise library for
+            offline browsing (writes still need a connection).
           </p>
         </div>
       </CardContent>

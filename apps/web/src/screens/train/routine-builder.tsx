@@ -23,7 +23,8 @@ import { EmptyState } from "@/components/shared/empty-state"
 import { RoutineDaysEditor } from "@/components/shared/routine-days-editor"
 import { useApiWrite } from "@/hooks/use-api-write"
 import { useAiProvider } from "@/contexts/ai-provider-context"
-import { getRoutine, getSettings, saveRoutine } from "@/lib/api-client"
+import { getRoutine, getSettings, saveRoutine, generateRoutineAi } from "@/lib/api-client"
+import { fetchExercises } from "@/hooks/use-exercises"
 import { SPLIT_PRESETS, autofillDayExercises, describeSchedule, splitPreset, type Equipment, type RoutineDay, type SplitType } from "@/lib/stub-data"
 import type { Routine } from "shared"
 
@@ -64,39 +65,64 @@ export function RoutineBuilder() {
       .catch(() => {})
   }, [])
 
-  function runGeneration() {
+  async function runGeneration() {
     setGenerating(true)
     setGenProgress(8)
-    // Ticks toward ~92% rather than jumping straight to 100 — a static bar (or one that
-    // snaps to done) reads as fake; an eased climb reads as real work in progress.
     const tick = window.setInterval(() => {
       setGenProgress((p) => (p >= 92 ? p : p + (92 - p) * 0.25))
     }, 180)
-    window.setTimeout(() => {
+
+    try {
+      const splitType = aiSplitType === "ai_choice" ? "upper_lower" : aiSplitType
+      const preset = SPLIT_PRESETS.find((p) => p.id === splitType)!
+      const pool = await fetchExercises()
+      const ai = await generateRoutineAi({
+        splitType,
+        equipment,
+        dayLabels: preset.dayLabels,
+      })
+
       window.clearInterval(tick)
       setGenProgress(100)
-      window.setTimeout(() => {
-        const splitType = aiSplitType === "ai_choice" ? "upper_lower" : aiSplitType
-        const preset = SPLIT_PRESETS.find((p) => p.id === splitType)!
-        const generated: RoutineDay[] = preset.dayLabels.map((label, i) => ({
+
+      let generated: RoutineDay[]
+      if (ai.degraded || !ai.days) {
+        toast.message(ai.reason ?? "AI unavailable — using equipment-based fill")
+        generated = preset.dayLabels.map((label, i) => ({
           id: `generated-day-${i + 1}`,
           label,
-          exercises: autofillDayExercises(label, equipment),
+          exercises: autofillDayExercises(label, equipment, pool),
         }))
-        setDays(generated)
-        setActiveDay(generated[0]?.id ?? "")
-        setCreatedVia("ai")
-        setRoutine((prev) => ({
-          name: `${preset.label} — AI-generated`,
-          splitType,
-          schedule: prev?.schedule ?? { mode: "rotating", workDays: 4, restDays: 1 },
-          days: generated,
-          updatedAt: Date.now(),
+      } else {
+        generated = ai.days.map((d, i) => ({
+          id: `generated-day-${i + 1}`,
+          label: d.label,
+          exercises: d.exerciseIds.map((exerciseId) => ({
+            exerciseId,
+            targetSets: 3,
+            targetReps: "8-12",
+            targetWeightKg: 20,
+          })),
         }))
-        setGenerating(false)
-        setAiDialogOpen(false)
-      }, 200)
-    }, 2200)
+      }
+
+      setDays(generated)
+      setActiveDay(generated[0]?.id ?? "")
+      setCreatedVia("ai")
+      setRoutine((prev) => ({
+        name: `${preset.label} — AI-generated`,
+        splitType,
+        schedule: prev?.schedule ?? { mode: "rotating", workDays: 4, restDays: 1 },
+        days: generated,
+        updatedAt: Date.now(),
+      }))
+    } catch {
+      window.clearInterval(tick)
+      toast.error("Couldn't generate a routine")
+    } finally {
+      setGenerating(false)
+      setAiDialogOpen(false)
+    }
   }
 
   const genStage =
@@ -290,7 +316,13 @@ export function RoutineBuilder() {
               </Badge>
             </div>
 
-            <RoutineDaysEditor days={days} setDays={setDays} activeDay={activeDay} onActiveDayChange={setActiveDay} />
+            <RoutineDaysEditor
+              days={days}
+              setDays={setDays}
+              activeDay={activeDay}
+              onActiveDayChange={setActiveDay}
+              equipment={equipment}
+            />
           </>
         )}
       </div>

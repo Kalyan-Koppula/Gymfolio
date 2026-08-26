@@ -6,13 +6,17 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
-    "generate": "drizzle-kit generate"
+    "generate": "drizzle-kit generate",
+    "seed:media": "node ./scripts/seed-media.mjs",
+    "preview:gifs": "node ./scripts/preview-gifs.mjs"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
     "drizzle-kit": "^0.31.10",
+    "gifenc": "^1.0.3",
+    "sharp": "^0.34.3",
     "typescript": "~6.0.2"
   }
 }

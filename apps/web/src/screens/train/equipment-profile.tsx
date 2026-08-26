@@ -11,7 +11,7 @@ import { SaveButton } from "@/components/shared/save-button"
 import { AiDegradedAlert } from "@/components/shared/ai-degraded-alert"
 import { useApiWrite } from "@/hooks/use-api-write"
 import { useAiProvider } from "@/contexts/ai-provider-context"
-import { getSettings, saveSettings } from "@/lib/api-client"
+import { getSettings, saveSettings, detectEquipment } from "@/lib/api-client"
 import { EQUIPMENT_LABELS, type Equipment } from "@/lib/stub-data"
 import type { UserSettings } from "shared"
 
@@ -46,9 +46,18 @@ export function EquipmentProfile() {
     setSource("manual")
   }
 
-  function runDetection() {
-    setSelected(new Set(["barbell", "dumbbell", "bench", "pull-up-bar", "cable-machine", "squat-rack"]))
-    setSource("ai_detected")
+  async function runDetection() {
+    try {
+      const res = await detectEquipment()
+      if (res.degraded || res.equipment.length === 0) {
+        toast.message(res.reason ?? "AI unavailable — adjust manually")
+        return
+      }
+      setSelected(new Set(res.equipment))
+      setSource("ai_detected")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Detection failed")
+    }
   }
 
   function handleSave() {

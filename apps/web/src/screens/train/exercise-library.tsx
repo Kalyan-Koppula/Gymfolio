@@ -15,17 +15,20 @@ import {
   SheetFooter,
   SheetTrigger,
 } from "@/components/ui/sheet"
-import { EQUIPMENT_LABELS, EXERCISES, type Equipment, type MuscleGroup } from "@/lib/stub-data"
+import { EQUIPMENT_LABELS, type Equipment, type MuscleGroup } from "@/lib/stub-data"
+import { useExercises } from "@/hooks/use-exercises"
+import { Skeleton } from "@/components/ui/skeleton"
 
 const MUSCLE_GROUPS: MuscleGroup[] = ["chest", "back", "shoulders", "legs", "arms", "core", "glutes"]
 const EQUIPMENT = Object.keys(EQUIPMENT_LABELS) as Equipment[]
 
 export function ExerciseLibrary() {
+  const { exercises, loading } = useExercises()
   const [query, setQuery] = React.useState("")
   const [muscleFilter, setMuscleFilter] = React.useState<Set<MuscleGroup>>(new Set())
   const [equipmentFilter, setEquipmentFilter] = React.useState<Set<Equipment>>(new Set())
 
-  const filtered = EXERCISES.filter((ex) => {
+  const filtered = (exercises ?? []).filter((ex) => {
     const matchesQuery = ex.name.toLowerCase().includes(query.toLowerCase())
     const matchesMuscle = muscleFilter.size === 0 || ex.muscleGroups.some((m) => muscleFilter.has(m))
     const matchesEquipment = equipmentFilter.size === 0 || ex.equipment.some((e) => equipmentFilter.has(e))
@@ -51,8 +54,9 @@ export function ExerciseLibrary() {
           </Button>
         }
       />
-      {/* No offline banner here by design — this screen reads from the cached, read-only
-          exercise DB and is expected to just work offline (architecture §6). */}
+      {!loading && exercises && (
+        <p className="px-4 pt-3 text-xs text-muted-foreground">{exercises.length} exercises · photos cached for offline reference</p>
+      )}
       <div className="space-y-4 px-4 py-4">
         <div className="flex gap-2">
           <div className="relative flex-1">
@@ -60,7 +64,7 @@ export function ExerciseLibrary() {
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search ~800 exercises…"
+              placeholder="Search exercises…"
               className="h-11 pl-9 text-base"
             />
           </div>
@@ -148,7 +152,12 @@ export function ExerciseLibrary() {
           </div>
         )}
 
-        {filtered.length > 0 ? (
+        {loading ? (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Skeleton className="h-28 w-full" />
+            <Skeleton className="h-28 w-full" />
+          </div>
+        ) : filtered.length > 0 ? (
           // Keyed by the filter selection (not the search text, so typing doesn't re-fire this
           // on every keystroke) — applying/clearing a filter chip fades the result set in.
           <div

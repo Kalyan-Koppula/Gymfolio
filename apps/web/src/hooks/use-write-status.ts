@@ -5,14 +5,9 @@ import { useOnlineStatus } from "@/hooks/use-online-status"
 export type WriteStatus = "idle" | "saving" | "success" | "failed"
 
 /**
- * §1.9 — every write-capable control in the app routes through this: a visible
- * "saving…" state, a specific failure state that never clears the input, and a
- * retry that re-submits the same payload rather than asking the user to re-enter it.
- *
- * For screens whose backend hasn't been built yet (Routine builder/wizard, Active Workout,
- * Equipment Profile, Account sessions) — real connectivity still gates whether a write can
- * succeed; the short delay stands in for the network round trip those endpoints will make
- * once they exist. Screens with a real API (Log hub, auth) use `useApiWrite` instead.
+ * Legacy fake-write helper kept for any remaining prototype surfaces. Prefer
+ * `useApiWrite` for anything that hits the Worker — Active Workout, Account,
+ * Equipment, and Routine screens all use the real path now.
  */
 export function useWriteStatus(successMessage = "Saved") {
   const online = useOnlineStatus()

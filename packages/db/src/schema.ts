@@ -167,3 +167,62 @@ export const routines = sqliteTable("routines", {
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 })
+
+// One row per workout session (in progress or completed). dayIndex is the routine.days
+// position at start time so adherence / cycle advancement don't depend on label renames.
+export const workoutLogs = sqliteTable("workout_logs", {
+  id: text("id").primaryKey(),
+  tenantId: text("tenant_id")
+    .notNull()
+    .references(() => tenants.id),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
+  date: text("date").notNull(), // YYYY-MM-DD
+  dayLabel: text("day_label").notNull(),
+  dayIndex: integer("day_index").notNull(),
+  status: text("status").notNull().default("in_progress"), // "in_progress" | "completed"
+  setsPlanned: integer("sets_planned").notNull(),
+  setsCompleted: integer("sets_completed").notNull().default(0),
+  startedAt: integer("started_at").notNull(),
+  completedAt: integer("completed_at"),
+  updatedAt: integer("updated_at").notNull(),
+})
+
+export const workoutLogSets = sqliteTable("workout_log_sets", {
+  id: text("id").primaryKey(),
+  workoutLogId: text("workout_log_id")
+    .notNull()
+    .references(() => workoutLogs.id),
+  exerciseId: text("exercise_id").notNull(),
+  setIndex: integer("set_index").notNull(), // 0-based within that exercise for this session
+  actualReps: integer("actual_reps").notNull(),
+  actualWeightKg: real("actual_weight_kg").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+})
+
+// Shared reference data — not tenant-scoped. Seeded once; GIF/YouTube fields filled later.
+export const exercises = sqliteTable("exercises", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  muscleGroupsJson: text("muscle_groups_json").notNull(), // JSON string[]
+  equipmentJson: text("equipment_json").notNull(), // JSON string[]
+  difficulty: text("difficulty").notNull(), // beginner | intermediate | advanced
+  instructions: text("instructions").notNull(),
+  hasGif: integer("has_gif").notNull().default(0), // 0/1
+  gifR2Key: text("gif_r2_key"),
+  youtubeStatus: text("youtube_status").notNull().default("not_fetched"),
+  youtubeJson: text("youtube_json"), // optional { title, channel, views }
+})
+
+// Per-tenant encrypted BYOK config — at most one row per tenant for v0.
+export const aiProviderConfigs = sqliteTable("ai_provider_configs", {
+  tenantId: text("tenant_id")
+    .primaryKey()
+    .references(() => tenants.id),
+  provider: text("provider").notNull(), // anthropic | openai | google | local
+  encryptedApiKey: text("encrypted_api_key").notNull(),
+  iv: text("iv").notNull(),
+  endpointOverride: text("endpoint_override"),
+  updatedAt: integer("updated_at").notNull(),
+})

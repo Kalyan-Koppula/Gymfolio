@@ -29,7 +29,7 @@ const CACHE = path.join(ROOT, ".cache/free-exercise-db")
 const FEDB_JSON = path.join(CACHE, "exercises.json")
 const FEDB_IMAGES = path.join(CACHE, "images")
 const API_DIR = path.join(ROOT, "apps/api")
-const R2_BUCKET = "fitness-tracker-media"
+const R2_BUCKET = "gymfolio-media-dev"
 const FEDB_RAW =
   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises"
 const FEDB_DIST =
@@ -99,11 +99,11 @@ async function putR2Pool(tasks) {
 function d1Exec(sql) {
   const tmp = path.join(CACHE, "seed-batch.sql")
   fs.writeFileSync(tmp, sql)
-  wrangler(`d1 execute fitness-tracker --local --file=${tmp}`)
+  wrangler(`d1 execute gymfolio-d1-dev --local --file=${tmp}`)
 }
 
 function d1Query(sql) {
-  return JSON.parse(wranglerOut(`d1 execute fitness-tracker --local --command=${JSON.stringify(sql)} --json`))
+  return JSON.parse(wranglerOut(`d1 execute gymfolio-d1-dev --local --command=${JSON.stringify(sql)} --json`))
 }
 
 async function processExercise(ex) {

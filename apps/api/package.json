@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "migrate:local": "wrangler d1 migrations apply fitness-tracker --local",
-    "deploy": "wrangler deploy"
+    "migrate:local": "wrangler d1 migrations apply gymfolio-d1-dev --local",
+    "deploy": "wrangler deploy",
+    "deploy:staging": "wrangler deploy --env staging",
+    "migrate:staging": "wrangler d1 migrations apply gymfolio-d1-staging --remote --env staging"
   },
   "dependencies": {
     "db": "workspace:*",

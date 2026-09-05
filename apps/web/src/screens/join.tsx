@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useOnlineStatus } from "@/hooks/use-online-status"
 import { useSession } from "@/contexts/session-context"
+import { APP_NAME } from "@/lib/brand"
 import { validateInvite, register, passkeyRegisterOptions, passkeyRegisterVerify, ApiError } from "@/lib/api-client"
 
 type ValidationState =
@@ -170,7 +171,8 @@ export function Join() {
             <Dumbbell className="size-7" />
           </div>
           <div>
-            <h1 className="font-heading text-xl font-semibold tracking-tight">
+            <p className="font-heading text-2xl font-semibold tracking-tight">{APP_NAME}</p>
+            <h1 className="mt-1 text-base font-medium text-muted-foreground">
               {validation.label ? `You're invited, ${validation.label}` : "You're invited"}
             </h1>
             <p className="text-sm text-muted-foreground">Create your account to join the family instance</p>

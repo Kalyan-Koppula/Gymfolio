@@ -12,6 +12,7 @@ import { useOnlineStatus } from "@/hooks/use-online-status"
 import { useApiWrite } from "@/hooks/use-api-write"
 import { useAiProvider } from "@/contexts/ai-provider-context"
 import { useSession } from "@/contexts/session-context"
+import { APP_NAME } from "@/lib/brand"
 import { EQUIPMENT_LABELS, type Equipment } from "@/lib/stub-data"
 import { register, saveSettings, detectEquipment, ApiError } from "@/lib/api-client"
 
@@ -148,6 +149,7 @@ export function Onboarding() {
   return (
     <div className="mx-auto flex min-h-svh max-w-md flex-col px-6 py-8" style={{ paddingTop: "var(--safe-top)" }}>
       <div className="mb-6 space-y-3">
+        <p className="font-heading text-lg font-semibold tracking-tight">{APP_NAME}</p>
         <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
           <Dumbbell className="size-4" />
           <span>

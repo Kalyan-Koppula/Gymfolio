@@ -187,7 +187,7 @@ export function writeHtmlReport(meta?: { status?: string }) {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>GymApp — E2E journey report</title>
+  <title>Gymfolio — E2E journey report</title>
   <style>
     :root { color-scheme: light dark; --bg: #0b0b0c; --card: #161618; --text: #f2f2f3; --muted: #9a9aa0; --ok: #3ecf8e; --bad: #f07178; --line: #2a2a2e; }
     @media (prefers-color-scheme: light) {
@@ -219,7 +219,7 @@ export function writeHtmlReport(meta?: { status?: string }) {
 </head>
 <body>
   <div class="wrap">
-    <h1>GymApp — full user journey</h1>
+    <h1>Gymfolio — full user journey</h1>
     <p class="meta">
       Automated Playwright walkthrough covering registration, onboarding, every primary screen,
       and key actions. Generated ${new Date().toISOString()}

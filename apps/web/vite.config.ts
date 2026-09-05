@@ -13,9 +13,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icons.svg'],
       manifest: {
-        name: 'Fitness Tracker',
-        short_name: 'FitTrack',
-        description: 'Personal fitness tracker — workouts, macros, and progress',
+        name: 'Gymfolio',
+        short_name: 'Gymfolio',
+        description: 'Workouts, macros, and progress — for you and your family',
         theme_color: '#0a0a0a',
         background_color: '#0a0a0a',
         display: 'standalone',

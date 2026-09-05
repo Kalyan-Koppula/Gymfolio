@@ -3,7 +3,7 @@ import * as React from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 
-const STORAGE_KEY = "fitness-tracker:pwa-install-dismissed-at"
+const STORAGE_KEY = "gymfolio:pwa-install-dismissed-at"
 const SNOOZE_MS = 30 * 24 * 60 * 60 * 1000
 
 function isRunningInstalled(): boolean {
@@ -68,7 +68,7 @@ export function PwaInstallCard() {
           <SquarePlus className="size-5 text-primary" />
         </div>
         <div className="space-y-1.5 text-sm">
-          <p className="font-medium">Install this app for gym use</p>
+          <p className="font-medium">Install Gymfolio for gym use</p>
           <p className="text-muted-foreground">
             Tap <Share className="inline size-3.5 -translate-y-0.5" aria-label="Share icon" /> in
             Safari's toolbar, then <span className="font-medium text-foreground">Add to Home Screen</span>.

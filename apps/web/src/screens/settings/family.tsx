@@ -108,7 +108,7 @@ export function Family() {
   async function handleShare(url: string) {
     if (canShare) {
       try {
-        await navigator.share({ title: "Join our fitness tracker", url })
+        await navigator.share({ title: "Join us on Gymfolio", url })
         return
       } catch {
         // user cancelled the share sheet — fall through to clipboard

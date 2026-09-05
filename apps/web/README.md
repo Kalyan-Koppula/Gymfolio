@@ -1,8 +1,8 @@
-# Fitness Tracker — Web
+# Gymfolio — Web
 
-The frontend for the self-hosted fitness tracker (shadcn/ui, "new-york" style, Tailwind v4).
+The frontend for Gymfolio (shadcn/ui, "new-york" style, Tailwind v4).
 Part of the monorepo at the repo root — see `../api` for the backend and
-`../../.refdocs/fitness-tracker-architecture.md` for the full design.
+`../../docs/STAGING.md` for staging infrastructure naming.
 
 ## Run it
 

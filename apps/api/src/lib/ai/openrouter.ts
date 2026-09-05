@@ -79,8 +79,8 @@ export class OpenRouterProvider implements AIProvider {
       apiKey,
       model: modelSlug,
       headers: {
-        "HTTP-Referer": "https://fitness-tracker.local",
-        "X-Title": "Fitness Tracker",
+        "HTTP-Referer": "https://gymfolio.app",
+        "X-Title": "Gymfolio",
       },
     }
   }

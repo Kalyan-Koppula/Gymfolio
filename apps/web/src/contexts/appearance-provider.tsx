@@ -28,7 +28,7 @@ type AppearanceState = {
 
 const AppearanceContext = React.createContext<AppearanceState | null>(null)
 
-const STORAGE_KEY = "fitness-tracker:appearance"
+const STORAGE_KEY = "gymfolio:appearance"
 
 type StoredAppearance = {
   palette: Palette

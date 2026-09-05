@@ -38,7 +38,7 @@ fs.mkdirSync(path.dirname(tmp), { recursive: true })
 fs.writeFileSync(tmp, sql)
 
 try {
-  execSync(`pnpm exec wrangler d1 execute fitness-tracker --local --file=${tmp}`, {
+  execSync(`pnpm exec wrangler d1 execute gymfolio-d1-dev --local --file=${tmp}`, {
     cwd: API,
     stdio: "inherit",
   })

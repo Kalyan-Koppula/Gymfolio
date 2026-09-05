@@ -1,15 +1,15 @@
-name = "fitness-tracker-api"
+name = "gymfolio-api-dev"
 main = "src/index.ts"
 compatibility_date = "2026-08-01"
 compatibility_flags = ["nodejs_compat"]
 
-# Placeholder IDs below — fine for `wrangler dev` (local-only, Miniflare-emulated D1/KV,
-# no Cloudflare account needed). Replace with real IDs from `wrangler d1 create` and
-# `wrangler kv namespace create` before ever running with --remote or `wrangler deploy`.
+# Local / default wrangler target = *dev*.
+# Staging = `wrangler deploy --env staging` (see docs/STAGING.md).
+# Placeholder IDs are fine for `wrangler dev` (Miniflare). Replace before --remote / deploy.
 
 [[d1_databases]]
 binding = "DB"
-database_name = "fitness-tracker"
+database_name = "gymfolio-d1-dev"
 database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "../../packages/db/migrations"
 
@@ -19,23 +19,46 @@ id = "0000000000000000000000000000000"
 
 [[r2_buckets]]
 binding = "MEDIA"
-bucket_name = "fitness-tracker-media"
-preview_bucket_name = "fitness-tracker-media"
+bucket_name = "gymfolio-media-dev"
+preview_bucket_name = "gymfolio-media-dev"
 
-# Daily Cron: YouTube revalidation + OpenRouter model-capability cache (architecture §4 / §7).
 [triggers]
 crons = ["0 4 * * *"]
 
 [vars]
 ENVIRONMENT = "development"
-# Dev-only fallback so BYOK encrypt/decrypt works under `wrangler dev` without secrets.
-# Replace via `wrangler secret put MASTER_KEY` before any remote deploy.
 MASTER_KEY = "dev-only-master-key-replace-before-deploy"
-# Optional — enables lazy YouTube reference lookup on exercise detail (FR-4.5).
-# YOUTUBE_API_KEY = ""
-# WebAuthn relying-party config — rpID must be the bare domain (no scheme/port); the browser
-# only allows a credential to be used on the exact rpID (or a parent domain) it was created
-# under. Update all three before deploying to a real domain.
 WEBAUTHN_RP_ID = "localhost"
-WEBAUTHN_RP_NAME = "Fitness Tracker"
+WEBAUTHN_RP_NAME = "Gymfolio"
 WEBAUTHN_ORIGIN = "http://localhost:5173"
+
+# ---------------------------------------------------------------------------
+# Staging — pnpm --filter api deploy:staging
+# Create resources first, paste real IDs, set WebAuthn host, then secrets.
+# ---------------------------------------------------------------------------
+[env.staging]
+name = "gymfolio-api-staging"
+
+[env.staging.vars]
+ENVIRONMENT = "staging"
+WEBAUTHN_RP_NAME = "Gymfolio"
+# Replace with your staging hostname before first remote deploy:
+WEBAUTHN_RP_ID = "staging.gymfolio.example.com"
+WEBAUTHN_ORIGIN = "https://staging.gymfolio.example.com"
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "gymfolio-d1-staging"
+database_id = "REPLACE_WITH_STAGING_D1_ID"
+migrations_dir = "../../packages/db/migrations"
+
+[[env.staging.kv_namespaces]]
+binding = "SESSIONS_KV"
+id = "REPLACE_WITH_STAGING_KV_ID"
+
+[[env.staging.r2_buckets]]
+binding = "MEDIA"
+bucket_name = "gymfolio-media-staging"
+
+[env.staging.triggers]
+crons = ["0 4 * * *"]

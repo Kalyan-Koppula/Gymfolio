@@ -23,17 +23,20 @@ Web: `http://localhost:5173` · API: `http://localhost:8787` (proxied as `/api`)
 
 ## Staging
 
-Full infra, secrets hygiene (what belongs in git vs Worker secrets), deploy, and smoke checklist:
+Free Cloudflare hostnames (`*.pages.dev` / `*.workers.dev`), secrets hygiene, branch self-deploy, and smoke checklist:
 
 **[docs/STAGING.md](docs/STAGING.md)**
 
-Quick local secrets setup:
-
 ```bash
-cp apps/api/.dev.vars.example apps/api/.dev.vars
-# set MASTER_KEY, then: pnpm db:migrate:local && pnpm dev
+cp apps/api/.dev.vars.example apps/api/.dev.vars   # local MASTER_KEY
+# After Cloudflare resources + secrets are set:
+git checkout staging && pnpm deploy:staging
 ```
 
 ## Brand
 
 Product name is **Gymfolio** everywhere (PWA, WebAuthn RP name, OpenRouter title, UI).
+
+## Media storage
+
+Exercise media can live on **Cloudflare R2** (`MEDIA_BACKEND=r2`, default) or **Backblaze B2** (`MEDIA_BACKEND=b2`). See [docs/STAGING.md](docs/STAGING.md) §1a.

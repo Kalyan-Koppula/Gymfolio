@@ -1,11 +1,96 @@
 # Gymfolio — staging setup guide
 
-Complete operator runbook: secrets hygiene, Cloudflare resources, deploy, and smoke tests.
+Complete operator runbook: secrets hygiene, **free Cloudflare hostnames** (`*.pages.dev` / `*.workers.dev`), branch-based self-deploy, and smoke tests.
+
 Follows [Cloudflare Workers best practices](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/) and [Secrets](https://developers.cloudflare.com/workers/configuration/secrets/).
 
 ---
 
-## 1. Vars vs secrets (do not leak credentials in git)
+## 0. Hosting model (free Cloudflare — no purchased domain)
+
+You do **not** need to buy a domain. Use Cloudflare’s free hostnames:
+
+| Surface | Free URL | Product |
+| --- | --- | --- |
+| Web (SPA + `/api` proxy) | `https://gymfolio-web-staging.pages.dev` | [Cloudflare Pages](https://developers.cloudflare.com/pages/) |
+| API Worker | `https://gymfolio-api-staging.<workers-subdomain>.workers.dev` | [Workers](https://developers.cloudflare.com/workers/) + D1 + R2 + KV |
+
+Find your **workers subdomain** in the dashboard: Workers & Pages → Overview (or after first `wrangler deploy`, Wrangler prints the URL). It looks like `https://gymfolio-api-staging.abc123.workers.dev`.
+
+### Why a Pages Function proxy?
+
+Browsers call relative `/api/…` (see [`apps/web/src/lib/api-client.ts`](../apps/web/src/lib/api-client.ts)). `pages.dev` and `workers.dev` are **different sites**, so a bare split would break session cookies and WebAuthn.
+
+[`apps/web/functions/api/[[path]].ts`](../apps/web/functions/api/[[path]].ts) runs on Pages and proxies `/api/*` to the Worker. The browser only talks to `*.pages.dev` → same-origin cookies + passkeys work on the free hostname.
+
+```
+Browser
+  → https://gymfolio-web-staging.pages.dev/           → Pages static assets
+  → https://gymfolio-web-staging.pages.dev/api/*      → Pages Function
+                                                         → fetch(GYMFOLIO_API_ORIGIN + /api/…)
+                                                         → gymfolio-api-staging.*.workers.dev
+                                                              ├─ media (R2 or Backblaze B2)
+                                                              ├─ D1  gymfolio-d1-staging
+                                                              └─ KV  gymfolio-sessions-staging
+```
+
+**WebAuthn** must use the **Pages** host (what the user sees in the address bar):
+
+```toml
+WEBAUTHN_RP_ID = "gymfolio-web-staging.pages.dev"
+WEBAUTHN_ORIGIN = "https://gymfolio-web-staging.pages.dev"
+```
+
+### Optional later: your own domain
+
+When you have a zone on Cloudflare DNS, you can put Pages + a Worker route on `staging.gymfolio.example.com` (true `/api/*` route, no proxy). Keep the free path until then; see §15.
+
+---
+
+## 1a. Media storage: Cloudflare R2 or Backblaze B2
+
+Exercise images are served by the API from object storage. Choose one backend via the non-secret var `MEDIA_BACKEND`:
+
+| Value | Store | Config |
+| --- | --- | --- |
+| `r2` (default) | Cloudflare R2 | `[[r2_buckets]]` binding `MEDIA` in `wrangler.toml` |
+| `b2` | Backblaze B2 (S3-compatible) | Secrets: `B2_KEY_ID`, `B2_APPLICATION_KEY`, `B2_BUCKET`, `B2_ENDPOINT` (+ optional `B2_REGION`) |
+
+In [`apps/api/wrangler.toml`](../apps/api/wrangler.toml):
+
+```toml
+MEDIA_BACKEND = "r2"   # or "b2"
+```
+
+### Using Backblaze B2
+
+1. Create a B2 bucket + application key with read/write on that bucket.
+2. Note the **S3-compatible endpoint** (Bucket settings → S3 endpoint), e.g. `https://s3.us-west-004.backblazeb2.com`.
+3. Set `MEDIA_BACKEND = "b2"` in `[vars]` / `[env.staging.vars]`.
+4. Local — add to `apps/api/.dev.vars` (see `.dev.vars.example`).
+5. Staging:
+
+```bash
+cd apps/api
+pnpm exec wrangler secret put B2_KEY_ID --env staging
+pnpm exec wrangler secret put B2_APPLICATION_KEY --env staging
+pnpm exec wrangler secret put B2_BUCKET --env staging
+pnpm exec wrangler secret put B2_ENDPOINT --env staging
+# optional: wrangler secret put B2_REGION --env staging
+```
+
+6. Seed uploads:
+
+```bash
+pnpm seed:media -- --backend b2 --limit 20
+# or MEDIA_BACKEND=b2 in .dev.vars / env
+```
+
+`GET /api/health` reports `{ "mediaBackend": "r2" | "b2" }`.
+
+R2 binding can remain in `wrangler.toml` when using B2 (unused). For B2-only, you may omit creating an R2 bucket.
+
+---
 
 ### Safe in git — `wrangler.toml` `[vars]` and bindings
 
@@ -13,6 +98,7 @@ Follows [Cloudflare Workers best practices](https://developers.cloudflare.com/wo
 | --- | --- | --- |
 | Environment label | `ENVIRONMENT = "staging"` | Not a credential |
 | WebAuthn RP name / host / origin | `WEBAUTHN_RP_*` | Public browser config |
+| Media backend selector | `MEDIA_BACKEND = "r2"` \| `"b2"` | Not a credential |
 | D1 `database_id`, KV `id`, R2 `bucket_name` | UUIDs / names | Resource IDs, not keys |
 
 Vars are **non-inheritable**: every `[env.*]` must declare its own `[env.*.vars]`.
@@ -23,13 +109,14 @@ Vars are **non-inheritable**: every `[env.*]` must declare its own `[env.*.vars]
 | --- | --- | --- |
 | `MASTER_KEY` | AES key material for BYOK AI key encryption | `wrangler secret put MASTER_KEY --env staging` |
 | `YOUTUBE_API_KEY` | Optional YouTube Data API | `wrangler secret put YOUTUBE_API_KEY --env staging` |
+| `B2_*` | Backblaze credentials when `MEDIA_BACKEND=b2` | `wrangler secret put B2_KEY_ID` (etc.) `--env staging` |
 
-To your Worker code, secrets look like any other `env` binding (`c.env.MASTER_KEY`). The difference is values are encrypted at rest and **write-only** in the dashboard / Wrangler (you cannot read them back).
+To your Worker code, secrets look like any other `env` binding (`c.env.MASTER_KEY`). Values are encrypted at rest and **write-only** in the dashboard / Wrangler.
 
 ### Worker secrets vs Secrets Store
 
 - **Worker secrets** (`wrangler secret put`) — use this. Correct default for a single API Worker.
-- **Secrets Store** (account-level, shared across Workers) — skip until multiple Workers need the same secret with ACL.
+- **Secrets Store** (account-level) — skip until multiple Workers need the same secret with ACL.
 
 ### Local development
 
@@ -46,11 +133,9 @@ pnpm --filter api dev
 
 ### If a secret was ever committed
 
-The old placeholder `MASTER_KEY` in `wrangler.toml` was removed. If you ever put a **real** key in git:
-
-1. Generate a new key and `wrangler secret put MASTER_KEY --env staging` (and prod).
-2. Re-save any BYOK AI provider keys in the app (ciphertext depends on `MASTER_KEY`).
-3. Consider rotating the git history only if a production-grade key was pushed.
+1. Generate a new key and `wrangler secret put MASTER_KEY --env staging`.
+2. Re-save any BYOK AI provider keys (ciphertext depends on `MASTER_KEY`).
+3. Rotate git history only if a production-grade key was pushed.
 
 ---
 
@@ -58,52 +143,25 @@ The old placeholder `MASTER_KEY` in `wrangler.toml` was removed. If you ever put
 
 Never share D1 / R2 / KV / Workers across environments.
 
-| Resource | Dev (local) | Staging | Prod (later) |
-| --- | --- | --- | --- |
-| Worker (API) | `gymfolio-api-dev` | `gymfolio-api-staging` | `gymfolio-api-prod` |
-| D1 | `gymfolio-d1-dev` | `gymfolio-d1-staging` | `gymfolio-d1-prod` |
-| R2 | `gymfolio-media-dev` | `gymfolio-media-staging` | `gymfolio-media-prod` |
-| KV sessions | Miniflare placeholder | `gymfolio-sessions-staging` | `gymfolio-sessions-prod` |
-| Pages (web) | Vite `:5173` | `gymfolio-web-staging` | `gymfolio-web-prod` |
-| Hostname | `localhost` | `staging.gymfolio.<your-domain>` | `app.gymfolio.<your-domain>` |
+| Resource | Dev (local) | Staging (free CF) |
+| --- | --- | --- |
+| Worker (API) | `gymfolio-api-dev` | `gymfolio-api-staging` → `*.workers.dev` |
+| D1 | `gymfolio-d1-dev` | `gymfolio-d1-staging` |
+| R2 or Backblaze B2 | `gymfolio-media-dev` / local B2 | `MEDIA_BACKEND` + R2 bucket **or** B2 secrets |
+| KV sessions | Miniflare placeholder | `gymfolio-sessions-staging` |
+| Pages (web) | Vite `:5173` | `gymfolio-web-staging` → `*.pages.dev` |
+| Public hostname | `localhost` | `gymfolio-web-staging.pages.dev` |
 
 Wrangler default (no `--env`) = **dev**. Staging = `--env staging`.
 
 ---
 
-## 3. Architecture (same-origin)
+## 3. Prerequisites
 
-Pages serves the SPA; the Worker owns `/api/*` on the **same hostname** so session cookies and WebAuthn stay simple (mirrors local Vite `/api` proxy).
-
-```
-Browser
-  → https://staging.gymfolio.<domain>/          → Pages (gymfolio-web-staging)
-  → https://staging.gymfolio.<domain>/api/*     → Worker (gymfolio-api-staging)
-                                                    ├─ D1  gymfolio-d1-staging
-                                                    ├─ R2  gymfolio-media-staging
-                                                    └─ KV  gymfolio-sessions-staging
-```
-
-Route pattern (in [`apps/api/wrangler.toml`](../apps/api/wrangler.toml)):
-
-```toml
-[[env.staging.routes]]
-pattern = "staging.gymfolio.example.com/api/*"
-zone_name = "example.com"
-```
-
-- Pattern **must** end with `/*` so requests with query strings match.
-- `zone_name` is the Cloudflare zone (apex), not the staging subdomain.
-- Pages custom domain handles everything else; do **not** add a Worker route for `staging…/*` (that would steal the SPA).
-
----
-
-## 4. Prerequisites
-
-- Cloudflare account
-- Domain on **Cloudflare DNS** (proxied orange-cloud for the staging hostname)
-- Node + pnpm (repo root)
+- Free Cloudflare account ([sign up](https://dash.cloudflare.com/sign-up))
+- Node + pnpm
 - `wrangler login` (or `CLOUDFLARE_API_TOKEN` in CI)
+- **No** custom domain required
 
 ```bash
 cd /path/to/Gymfolio
@@ -111,9 +169,11 @@ pnpm install
 pnpm exec wrangler login
 ```
 
+Enable **Workers** and **Pages** in the dashboard if prompted. Free tier includes Workers, Pages, D1, R2 (with limits), and KV.
+
 ---
 
-## 5. One-time: create staging resources
+## 4. One-time: create staging resources
 
 From `apps/api`:
 
@@ -125,46 +185,27 @@ pnpm exec wrangler kv namespace create gymfolio-sessions-staging
 pnpm exec wrangler r2 bucket create gymfolio-media-staging
 ```
 
-Paste the returned **database_id** and KV **id** into `[env.staging]` in `wrangler.toml`:
+Paste the returned **database_id** and KV **id** into `[env.staging]` in [`apps/api/wrangler.toml`](../apps/api/wrangler.toml):
 
 - `[[env.staging.d1_databases]]` → `database_id`
 - `[[env.staging.kv_namespaces]]` → `id`
 
-R2 only needs `bucket_name = "gymfolio-media-staging"` (already set).
+R2 only needs `bucket_name = "gymfolio-media-staging"` (already set). Commit those IDs — they are not secrets.
 
-Commit those IDs — they are not secrets.
+Confirm WebAuthn vars point at Pages:
+
+```toml
+WEBAUTHN_RP_ID = "gymfolio-web-staging.pages.dev"
+WEBAUTHN_ORIGIN = "https://gymfolio-web-staging.pages.dev"
+```
 
 ---
 
-## 6. Configure non-secret staging vars + route
-
-In `apps/api/wrangler.toml` under `[env.staging.vars]`:
-
-```toml
-ENVIRONMENT = "staging"
-WEBAUTHN_RP_NAME = "Gymfolio"
-WEBAUTHN_RP_ID = "staging.gymfolio.YOUR_DOMAIN"          # bare host, no scheme
-WEBAUTHN_ORIGIN = "https://staging.gymfolio.YOUR_DOMAIN"
-```
-
-Uncomment and edit the route:
-
-```toml
-[[env.staging.routes]]
-pattern = "staging.gymfolio.YOUR_DOMAIN/api/*"
-zone_name = "YOUR_DOMAIN"
-```
-
-Passkeys created on `localhost` will **not** work on staging (different `rpID`) — expected.
-
----
-
-## 7. Set Worker secrets (staging)
+## 5. Set Worker secrets (staging)
 
 ```bash
 cd apps/api
 
-# Generate offline, then paste when Wrangler prompts (avoids shell history)
 openssl rand -base64 48
 pnpm exec wrangler secret put MASTER_KEY --env staging
 
@@ -172,81 +213,164 @@ pnpm exec wrangler secret put MASTER_KEY --env staging
 pnpm exec wrangler secret put YOUTUBE_API_KEY --env staging
 ```
 
-Confirm in Cloudflare dashboard → Workers → `gymfolio-api-staging` → Settings → Variables and Secrets:
+Dashboard → Workers → `gymfolio-api-staging` → Settings → Variables and Secrets:
 
 - **Variables**: `ENVIRONMENT`, `WEBAUTHN_*` (plaintext OK)
 - **Secrets**: `MASTER_KEY` (encrypted / hidden)
 
-`[env.staging.secrets] required = ["MASTER_KEY"]` makes deploy fail if the secret is missing.
+---
+
+## 6. Migrate staging D1
+
+```bash
+pnpm migrate:staging
+# or: cd apps/api && pnpm exec wrangler d1 migrations apply gymfolio-d1-staging --remote --env staging
+```
+
+Never point this at a prod database. Seed media into staging R2 only when ready (large upload).
 
 ---
 
-## 8. Migrate staging D1
+## 7. Deploy API (workers.dev)
 
 ```bash
-# From apps/api — applies packages/db/migrations to the REMOTE staging DB only
-pnpm exec wrangler d1 migrations apply gymfolio-d1-staging --remote --env staging
+pnpm deploy:staging:api
+# → https://gymfolio-api-staging.<subdomain>.workers.dev
 ```
 
-Or from repo root: `pnpm migrate:staging`.
-
-Never run this against a prod database name. Seed exercise media into staging R2 only when ready (large upload; extend `seed:media` for `--remote` when you need it).
-
----
-
-## 9. Deploy API
+Smoke the Worker **directly** (bypasses Pages):
 
 ```bash
-pnpm --filter api deploy:staging
-# equivalent: cd apps/api && pnpm exec wrangler deploy --env staging
-```
-
-Smoke the Worker route (after DNS + route are live):
-
-```bash
-curl -sS https://staging.gymfolio.YOUR_DOMAIN/api/health
+curl -sS "https://gymfolio-api-staging.<subdomain>.workers.dev/api/health"
 # → {"ok":true}
 ```
 
+Copy that origin (no trailing slash) — you need it for the Pages variable next.
+
 ---
 
-## 10. Deploy web (Pages)
+## 8. Create Pages project + proxy env + deploy web
 
 ```bash
-# From repo root
-pnpm --filter web build
-
 # Once
 pnpm exec wrangler pages project create gymfolio-web-staging
 
-pnpm exec wrangler pages deploy apps/web/dist --project-name=gymfolio-web-staging
+# Set the proxy target (Pages → Worker). Use your real workers.dev URL from §7.
+# Via dashboard: Workers & Pages → gymfolio-web-staging → Settings → Environment variables
+#   Name:  GYMFOLIO_API_ORIGIN
+#   Value: https://gymfolio-api-staging.<subdomain>.workers.dev
+#   Scope: Production (and Preview if you use branch previews)
+#
+# Or CLI (wrangler pages secret / project settings vary by version) — dashboard is fine.
 ```
 
-Then in the Cloudflare dashboard (or CLI):
+Build + deploy (includes [`functions/`](../apps/web/functions/) for `/api` proxy):
 
-1. Pages → `gymfolio-web-staging` → Custom domains → add `staging.gymfolio.YOUR_DOMAIN`.
-2. Ensure DNS CNAME/proxied record exists for that hostname.
-3. SPA fallback is shipped via [`apps/web/public/_redirects`](../apps/web/public/_redirects) (`/* → /index.html`).
+```bash
+pnpm deploy:staging:web
+# from apps/web: build then wrangler pages deploy dist --project-name=gymfolio-web-staging
+```
 
-Order of operations tip: attach the Pages custom domain **before** or **with** the Worker `/api/*` route so the hostname resolves; the more-specific Worker route wins for `/api/*`.
+Or both API + web:
+
+```bash
+pnpm deploy:staging
+```
+
+Open: `https://gymfolio-web-staging.pages.dev`
+
+SPA fallback: [`apps/web/public/_redirects`](../apps/web/public/_redirects).
+
+### Verify proxy
+
+```bash
+curl -sS "https://gymfolio-web-staging.pages.dev/api/health"
+# → {"ok":true}
+```
+
+If you see `GYMFOLIO_API_ORIGIN is not set`, add the Pages variable and redeploy (or wait a minute for var propagation).
 
 ---
 
-## 11. Smoke checklist
+## 9. Self-deploy from a git branch
 
-- [ ] `GET /api/health` → `{"ok":true}`
-- [ ] Fresh D1: open site → onboarding / register owner
-- [ ] Session cookie is `Secure` (staging `ENVIRONMENT !== "development"`)
-- [ ] Password login works
-- [ ] Register a passkey on the **staging** origin
-- [ ] Start / finish a workout; resume bar clears after finish
+Staging is meant to track a branch you control (recommended: `staging` or `main`).
+
+### A. Manual deploy from a branch (recommended first)
+
+```bash
+git fetch origin
+git checkout staging          # or: git checkout main
+git pull --ff-only
+
+# One-time / when secrets or IDs change — skip on routine deploys
+# pnpm migrate:staging
+
+pnpm deploy:staging           # API Worker + Pages (build + functions)
+```
+
+Deploy only what changed:
+
+```bash
+pnpm deploy:staging:api       # Worker only
+pnpm deploy:staging:web       # Pages only (build + functions)
+```
+
+Checklist before first push to a shared remote:
+
+- [ ] `apps/api/.dev.vars` is **not** committed (gitignored)
+- [ ] No `MASTER_KEY` in `wrangler.toml`
+- [ ] Staging D1/KV IDs filled in `wrangler.toml` and committed
+
+### B. Pages: connect Git for automatic web deploys
+
+1. Dashboard → Workers & Pages → `gymfolio-web-staging` → **Settings** → **Builds & deployments** (or create the project via “Connect to Git”).
+2. Connect GitHub/GitLab → select the Gymfolio repo.
+3. Configure:
+
+| Setting | Value |
+| --- | --- |
+| Production branch | `staging` (or `main`) |
+| Build command | `pnpm install && pnpm --filter web build` |
+| Build output directory | `apps/web/dist` |
+| Root directory | `/` (monorepo root) |
+
+4. Set Pages env var `GYMFOLIO_API_ORIGIN` on Production (same as §8).
+5. Ensure the Pages build can see `functions`: Wrangler/Pages must deploy from a layout that includes [`apps/web/functions`](../apps/web/functions). If Connect-to-Git only uploads `apps/web/dist`, **manual** `pnpm deploy:staging:web` (from `apps/web`, which picks up sibling `functions/`) is more reliable for the proxy. Prefer CLI deploy for web until Git build + functions path is confirmed in your dashboard.
+
+### C. API Worker does not auto-deploy from Pages Git
+
+Workers are separate. After merging to your staging branch:
+
+```bash
+git checkout staging && git pull
+pnpm deploy:staging:api
+```
+
+Or add a GitHub Action (see §13) that runs `wrangler deploy --env staging` on push to `staging`.
+
+### D. Preview deployments (optional)
+
+Pages can build every PR to a unique `*.pages.dev` preview URL. Preview WebAuthn will fail against production `WEBAUTHN_RP_ID` unless you add a separate preview Worker/env — skip previews for passkey testing; use the production Pages URL for staging QA.
+
+---
+
+## 10. Smoke checklist
+
+- [ ] `GET https://gymfolio-api-staging.<subdomain>.workers.dev/api/health` → ok
+- [ ] `GET https://gymfolio-web-staging.pages.dev/api/health` → ok (proxy)
+- [ ] Open Pages URL → onboarding / register owner on empty D1
+- [ ] Session cookie is `Secure` (`ENVIRONMENT !== "development"`)
+- [ ] Password login works on `*.pages.dev`
+- [ ] Register a passkey on the **Pages** origin (localhost passkeys will not work)
+- [ ] Start / finish a workout; resume bar clears
 - [ ] Exercise media loads from staging R2 (after seed)
 - [ ] PWA name shows **Gymfolio**
-- [ ] Dashboard shows no plaintext `MASTER_KEY` under Variables
+- [ ] Dashboard: no plaintext `MASTER_KEY` under Worker Variables
 
 ---
 
-## 12. Local after secrets hygiene
+## 11. Local after secrets hygiene
 
 ```bash
 cd apps/api && cp .dev.vars.example .dev.vars   # if needed
@@ -255,28 +379,48 @@ pnpm seed:media -- --limit 20                   # optional
 pnpm dev
 ```
 
-Local D1/R2 names: `gymfolio-d1-dev` / `gymfolio-media-dev`.
-
 ---
 
-## 13. CI sketch (optional)
+## 12. CI sketch (optional — deploy on push to `staging`)
 
-1. Create an API token with Workers, D1, Pages, Account read (least privilege).
-2. Store as GitHub Actions secret `CLOUDFLARE_API_TOKEN` (and `CLOUDFLARE_ACCOUNT_ID` if required).
-3. Deploy job:
-   - `pnpm --filter web build`
-   - `pnpm exec wrangler pages deploy apps/web/dist --project-name=gymfolio-web-staging`
-   - `pnpm --filter api deploy:staging`
-4. **Do not** put secret *values* in workflow YAML. Set `MASTER_KEY` once via CLI/dashboard. To rotate in CI, pipe from the Actions secret store:
+1. API token with Workers, D1, Pages edit (least privilege).
+2. GitHub secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
+3. On push to `staging`:
 
-```bash
-echo "$MASTER_KEY" | pnpm exec wrangler secret put MASTER_KEY --env staging
+```yaml
+# sketch — .github/workflows/deploy-staging.yml
+on:
+  push:
+    branches: [staging]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install
+      - run: pnpm deploy:staging
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 ```
 
-Prefer rotating secrets rarely and out-of-band.
+4. Set `MASTER_KEY` once via CLI — do **not** put values in workflow YAML.
 
 ---
 
-## 14. Prod (later)
+## 13. Prod (later)
 
-Mirror staging with `*-prod` resource names and `[env.production]` in `wrangler.toml`. Never reuse staging D1/R2/KV. Separate `MASTER_KEY`. Same Pages + `/api/*` route pattern on `app.gymfolio.<domain>`.
+Mirror with `*-prod` names and `[env.production]`. Separate D1/R2/KV/`MASTER_KEY`. Free hostnames: `gymfolio-web-prod.pages.dev` + `gymfolio-api-prod.*.workers.dev`, or attach a custom domain.
+
+---
+
+## 14. Optional: custom domain (when you have one)
+
+1. Add domain to Cloudflare DNS.
+2. Pages → Custom domains → `staging.gymfolio.example.com`.
+3. Uncomment Worker route in `wrangler.toml` for `staging.gymfolio.example.com/api/*`.
+4. Update `WEBAUTHN_RP_ID` / `WEBAUTHN_ORIGIN` to that host.
+5. You can remove the Pages Function proxy once the Worker route owns `/api/*` on the same host.

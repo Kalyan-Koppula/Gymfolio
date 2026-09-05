@@ -10,3 +10,15 @@ MASTER_KEY=replace-with-local-dev-master-key
 
 # Optional — enables YouTube reference lookup on exercise detail + cron revalidation.
 # YOUTUBE_API_KEY=
+
+# --- Media backend (must match wrangler.toml MEDIA_BACKEND) ---
+# Default is Cloudflare R2 via the MEDIA binding — no extra vars needed.
+#
+# For Backblaze B2 (S3-compatible), set MEDIA_BACKEND=b2 in wrangler.toml [vars]
+# and fill these (also as Worker secrets on staging):
+# MEDIA_BACKEND=b2
+# B2_KEY_ID=
+# B2_APPLICATION_KEY=
+# B2_BUCKET=gymfolio-media
+# B2_ENDPOINT=https://s3.us-west-004.backblazeb2.com
+# B2_REGION=us-west-004

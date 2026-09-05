@@ -23,7 +23,12 @@ const app = new Hono<AppEnv>()
 
 app.use(logger())
 
-app.get("/api/health", (c) => c.json({ ok: true }))
+app.get("/api/health", (c) =>
+  c.json({
+    ok: true,
+    mediaBackend: (c.env.MEDIA_BACKEND ?? "r2").toLowerCase() === "b2" ? "b2" : "r2",
+  }),
+)
 
 app.route("/api/auth", authRoutes)
 app.route("/api/body-metrics", bodyMetricsRoutes)

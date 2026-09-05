@@ -34,35 +34,44 @@ ENVIRONMENT = "development"
 WEBAUTHN_RP_ID = "localhost"
 WEBAUTHN_RP_NAME = "Gymfolio"
 WEBAUTHN_ORIGIN = "http://localhost:5173"
+# Media: "r2" (Cloudflare R2 binding MEDIA) or "b2" (Backblaze — secrets in .dev.vars).
+MEDIA_BACKEND = "r2"
 
 # Declared secret names (values come from .dev.vars locally / Worker secrets remotely).
 [secrets]
 required = ["MASTER_KEY"]
 
 # ---------------------------------------------------------------------------
-# Staging — pnpm --filter api deploy:staging
-# 1) Create D1/KV/R2; paste IDs below.
-# 2) Set WEBAUTHN_* to your real staging host.
-# 3) Uncomment [[env.staging.routes]] and set zone_name / pattern.
-# 4) wrangler secret put MASTER_KEY --env staging
+# Staging (free Cloudflare hostnames — no purchased domain)
+# Web:  https://gymfolio-web-staging.pages.dev
+# API:  https://gymfolio-api-staging.<workers-subdomain>.workers.dev
+# Browser talks only to pages.dev; Pages Function proxies /api/* → Worker.
+# Set WEBAUTHN_* to the *Pages* host (not workers.dev). See docs/STAGING.md.
 # ---------------------------------------------------------------------------
 [env.staging]
 name = "gymfolio-api-staging"
-# Optional: hide workers.dev URL for staging once custom route works.
-# workers_dev = false
+workers_dev = true
 
 [env.staging.vars]
 ENVIRONMENT = "staging"
 WEBAUTHN_RP_NAME = "Gymfolio"
-# Replace with your staging hostname before first remote deploy:
-WEBAUTHN_RP_ID = "staging.gymfolio.example.com"
-WEBAUTHN_ORIGIN = "https://staging.gymfolio.example.com"
+# Public site origin = Pages free hostname (update if your project name differs):
+WEBAUTHN_RP_ID = "gymfolio-web-staging.pages.dev"
+WEBAUTHN_ORIGIN = "https://gymfolio-web-staging.pages.dev"
+# "r2" (default — needs [[env.staging.r2_buckets]]) or "b2" (Backblaze secrets below).
+MEDIA_BACKEND = "r2"
 
 [env.staging.secrets]
 required = ["MASTER_KEY"]
+# When MEDIA_BACKEND = "b2", also put (not listed as required so R2 staging still deploys):
+#   wrangler secret put B2_KEY_ID --env staging
+#   wrangler secret put B2_APPLICATION_KEY --env staging
+#   wrangler secret put B2_BUCKET --env staging
+#   wrangler secret put B2_ENDPOINT --env staging
+# Optional: B2_REGION (inferred from endpoint when omitted)
 
-# Same-origin /api/* on the Pages custom domain (zone must be on Cloudflare DNS).
-# Pattern must end with /* so query strings match. Pages serves /*; this Worker owns /api/*.
+# Optional later: purchased domain on Cloudflare DNS — uncomment and set zone.
+# Not needed for *.pages.dev / *.workers.dev.
 # [[env.staging.routes]]
 # pattern = "staging.gymfolio.example.com/api/*"
 # zone_name = "example.com"
@@ -77,6 +86,7 @@ migrations_dir = "../../packages/db/migrations"
 binding = "SESSIONS_KV"
 id = "REPLACE_WITH_STAGING_KV_ID"
 
+# R2 — used when MEDIA_BACKEND = "r2". Safe to leave when using B2 (unused).
 [[env.staging.r2_buckets]]
 binding = "MEDIA"
 bucket_name = "gymfolio-media-staging"

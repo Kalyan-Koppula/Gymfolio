@@ -8,7 +8,7 @@ Exercise names, muscle groups, equipment tags, and step-by-step instructions are
 
 Still images and derived thumb GIFs come from the same repository's `exercises/` directory. That dataset was originally assembled from [wrkout/exercises.json](https://github.com/wrkout/exercises.json). Wrkout also sells a commercial image/video pack at [wrkout.xyz](https://wrkout.xyz/); the chain of title for the community-hosted JPGs is not fully documented.
 
-**Gymfolio uses those images only for personal, self-hosted in-app reference.** They are copied into your own Cloudflare R2 bucket at seed time — nothing is fetched from a third-party CDN at runtime. Do not republish the image pack as a standalone dataset or API.
+**Gymfolio uses those images only for personal, self-hosted in-app reference.** They are copied into your own object store (Cloudflare R2 or Backblaze B2) at seed time — nothing is fetched from a third-party CDN at runtime. Do not republish the image pack as a standalone dataset or API.
 
 ## Reference videos (YouTube)
 

@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 /**
- * Seeds free-exercise-db metadata into D1, gym photos + thumb GIFs into local R2,
- * and remaps legacy ex-N exercise IDs in routines / workout logs.
+ * Seeds free-exercise-db metadata into D1, gym photos + thumbs into object storage
+ * (Cloudflare R2 or Backblaze B2), and remaps legacy ex-N exercise IDs.
  *
  * Usage (from repo root):
  *   pnpm seed:media              # full catalog (~873 exercises)
  *   pnpm seed:media -- --limit 20  # smoke subset
  *   pnpm seed:media -- --media-only   # regenerate WebP thumb + stills only
- *   pnpm seed:media -- --upload-only  # upload cached WebPs to local R2 (no re-encode)
- *   pnpm preview:gifs                 # local WebP quality comparison (no R2)
+ *   pnpm seed:media -- --upload-only  # upload cached WebPs (no re-encode)
+ *   pnpm seed:media -- --backend b2   # upload to Backblaze B2 instead of R2
+ *   pnpm seed:media -- --skip-upload  # skip object storage upload
+ *   pnpm preview:gifs                 # local WebP quality comparison (no upload)
  */
 import fs from "node:fs"
 import path from "node:path"
@@ -23,6 +25,7 @@ import {
 } from "./lib/fedb-map.mjs"
 import { buildExerciseMedia } from "./lib/seed-exercise-media.mjs"
 import { thumbR2Key } from "./lib/media-build.mjs"
+import { resolveMediaBackend, uploadMediaObjects } from "./lib/media-upload.mjs"
 
 const ROOT = path.resolve(import.meta.dirname, "../../..")
 const CACHE = path.join(ROOT, ".cache/free-exercise-db")
@@ -38,10 +41,11 @@ const FEDB_DIST =
 const args = process.argv.slice(2).filter((a) => a !== "--")
 const limitIdx = args.indexOf("--limit")
 const LIMIT = limitIdx >= 0 ? Number(args[limitIdx + 1]) : null
-const SKIP_R2 = args.includes("--skip-r2")
+const SKIP_UPLOAD = args.includes("--skip-upload") || args.includes("--skip-r2")
 const SKIP_IMAGES = args.includes("--skip-images")
 const MEDIA_ONLY = args.includes("--media-only") || args.includes("--thumbs-only") || args.includes("--gifs-only")
 const UPLOAD_ONLY = args.includes("--upload-only")
+const MEDIA_BACKEND = resolveMediaBackend(API_DIR, process.argv)
 
 function wrangler(cmd, opts = {}) {
   execSync(`pnpm exec wrangler ${cmd}`, {
@@ -81,19 +85,14 @@ async function loadImage(relativePath) {
   return fs.readFileSync(local)
 }
 
-function putR2Bulk(tasks) {
-  if (tasks.length === 0) return
-  const mapPath = path.join(CACHE, "r2-bulk-upload.json")
-  const entries = tasks.map((t) => ({ key: t.key, file: t.filePath }))
-  fs.writeFileSync(mapPath, JSON.stringify(entries))
-  console.log(`Bulk uploading ${tasks.length} objects via wrangler r2 bulk put…`)
-  wrangler(
-    `r2 bulk put ${R2_BUCKET} --filename=${mapPath} --local --content-type image/webp --concurrency 50 -y`,
-  )
-}
-
-async function putR2Pool(tasks) {
-  putR2Bulk(tasks)
+async function putMediaPool(tasks) {
+  await uploadMediaObjects({
+    backend: MEDIA_BACKEND,
+    apiDir: API_DIR,
+    r2Bucket: R2_BUCKET,
+    tasks,
+    wrangler,
+  })
 }
 
 function d1Exec(sql) {
@@ -124,7 +123,7 @@ async function processExercise(ex) {
     try {
       const startBuf = await loadImage(images[0])
       const endBuf = images[1] ? await loadImage(images[1]) : null
-      const built = buildExerciseMedia(startBuf, endBuf, tmpDir, slug, { skipR2: SKIP_R2 })
+      const built = buildExerciseMedia(startBuf, endBuf, tmpDir, slug, { skipR2: SKIP_UPLOAD })
       uploads.push(...built.uploads)
       hasGif = built.hasGif
       gifR2Key = built.gifR2Key
@@ -189,7 +188,7 @@ function remapLegacyIds() {
 }
 
 async function main() {
-  console.log("Exercise media seed")
+  console.log(`Exercise media seed (backend=${MEDIA_BACKEND})`)
   await ensureFedbJson()
   const catalog = JSON.parse(fs.readFileSync(FEDB_JSON, "utf8"))
   const list = LIMIT ? catalog.slice(0, LIMIT) : catalog
@@ -206,8 +205,8 @@ async function main() {
         uploads.push({ key: `exercises/${slug}/${name}`, filePath, contentType: "image/webp" })
       }
     }
-    console.log(`Uploading ${uploads.length} cached WebP objects to local R2…`)
-    if (!SKIP_R2 && uploads.length > 0) await putR2Pool(uploads)
+    console.log(`Uploading ${uploads.length} cached WebP objects to ${MEDIA_BACKEND}…`)
+    if (!SKIP_UPLOAD && uploads.length > 0) await putMediaPool(uploads)
     const thumbUpdates = uploads.filter((u) => u.key.endsWith("/thumb.webp"))
     if (thumbUpdates.length > 0) {
       console.log("Updating D1 gif_r2_key paths…")
@@ -238,15 +237,15 @@ async function main() {
         const startBuf = await loadImage(images[0])
         const endBuf = images[1] ? await loadImage(images[1]) : null
         const tmpDir = path.join(CACHE, "out", slug)
-        const built = buildExerciseMedia(startBuf, endBuf, tmpDir, slug, { skipR2: SKIP_R2 })
+        const built = buildExerciseMedia(startBuf, endBuf, tmpDir, slug, { skipR2: SKIP_UPLOAD })
         uploads.push(...built.uploads)
       } catch (err) {
         console.warn(`  ⚠ media skipped for ${slug}: ${err.message}`)
       }
     }
-    if (!SKIP_R2 && uploads.length > 0) {
-      console.log(`Uploading ${uploads.length} WebP objects to local R2…`)
-      await putR2Pool(uploads)
+    if (!SKIP_UPLOAD && uploads.length > 0) {
+      console.log(`Uploading ${uploads.length} WebP objects to ${MEDIA_BACKEND}…`)
+      await putMediaPool(uploads)
     }
     if (uploads.length > 0) {
       console.log("Updating D1 gif_r2_key paths…")
@@ -278,9 +277,9 @@ async function main() {
     rows.push(rest)
   }
 
-  if (!SKIP_R2 && allUploads.length > 0) {
-    console.log(`Uploading ${allUploads.length} objects to local R2…`)
-    await putR2Pool(allUploads)
+  if (!SKIP_UPLOAD && allUploads.length > 0) {
+    console.log(`Uploading ${allUploads.length} objects to ${MEDIA_BACKEND}…`)
+    await putMediaPool(allUploads)
   }
 
   console.log("Writing D1 catalog…")
@@ -293,7 +292,7 @@ async function main() {
   if (!LIMIT) remapLegacyIds()
 
   const withMedia = rows.filter((r) => r.hasGif).length
-  console.log(`Done. ${rows.length} exercises in D1, ${withMedia} with R2 media.`)
+  console.log(`Done. ${rows.length} exercises in D1, ${withMedia} with ${MEDIA_BACKEND} media.`)
 }
 
 main().catch((err) => {

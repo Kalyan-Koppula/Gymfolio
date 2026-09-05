@@ -37,9 +37,9 @@ export function LogHub() {
     <div>
       <TopBar title="Log" />
       <OfflineBanner />
-      <div className="px-4 py-5">
+      <div className="px-4 py-5 md:px-6 lg:px-8">
         <Tabs defaultValue="weight">
-          <TabsList size="lg" className="w-full">
+          <TabsList size="lg" className="w-full md:max-w-xl">
             <TabsTrigger value="weight" className="h-full flex-col gap-0.5 text-xs">
               <Scale className="size-4" /> Weight
             </TabsTrigger>

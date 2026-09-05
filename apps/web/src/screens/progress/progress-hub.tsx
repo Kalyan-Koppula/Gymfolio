@@ -14,8 +14,8 @@ export function ProgressHub() {
   return (
     <div>
       <TopBar title="Progress" />
-      <div className="border-b border-border px-4 pt-3">
-        <nav className="flex gap-1" aria-label="Progress segments">
+      <div className="border-b border-border px-4 pt-3 md:px-6">
+        <nav className="flex gap-1 md:max-w-md" aria-label="Progress segments">
           {SEGMENTS.map((s) => {
             const active = s.match(pathname)
             return (

@@ -1,5 +1,6 @@
 import { NavLink, useLocation } from "react-router-dom"
 import { Dumbbell, Home, LineChart, NotebookPen, Settings } from "lucide-react"
+import { APP_FRAME } from "@/lib/app-frame"
 import { cn } from "@/lib/utils"
 
 const TABS = [
@@ -23,7 +24,7 @@ export function BottomTabBar() {
       className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80"
       style={{ paddingBottom: "var(--safe-bottom)" }}
     >
-      <div className="relative mx-auto flex h-14 max-w-2xl items-stretch justify-around">
+      <div className={cn("relative flex h-14 items-stretch justify-around", APP_FRAME)}>
         {/* Sliding active-tab indicator — one element that transitions position rather than
             re-rendering per tab, so the motion reads as one continuous slide (§1.8: purely
             decorative, motion-only — pairs with the icon/label state it accompanies, never

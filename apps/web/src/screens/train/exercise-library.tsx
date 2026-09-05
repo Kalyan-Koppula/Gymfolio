@@ -57,7 +57,7 @@ export function ExerciseLibrary() {
       {!loading && exercises && (
         <p className="px-4 pt-3 text-xs text-muted-foreground">{exercises.length} exercises · photos cached for offline reference</p>
       )}
-      <div className="space-y-4 px-4 py-4">
+      <div className="space-y-4 px-4 py-4 md:px-6 lg:px-8">
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -153,7 +153,7 @@ export function ExerciseLibrary() {
         )}
 
         {loading ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
             <Skeleton className="h-28 w-full" />
             <Skeleton className="h-28 w-full" />
           </div>
@@ -162,7 +162,7 @@ export function ExerciseLibrary() {
           // on every keystroke) — applying/clearing a filter chip fades the result set in.
           <div
             key={`${[...muscleFilter].join(",")}|${[...equipmentFilter].join(",")}`}
-            className="grid grid-cols-1 gap-3 sm:grid-cols-2 animate-in fade-in duration-200 ease-out"
+            className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 animate-in fade-in duration-200 ease-out"
           >
             {filtered.map((ex) => (
               <ExerciseCard key={ex.id} exercise={ex} />

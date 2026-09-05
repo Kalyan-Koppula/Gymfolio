@@ -52,7 +52,7 @@ export function AdherenceHistory() {
   return (
     <div>
       <TopBar title="Adherence & history" back />
-      <div className="space-y-5 px-4 py-4">
+      <div className="space-y-5 px-4 py-4 md:px-6 lg:px-8">
         <div>
           {history == null ? (
             <Skeleton className="h-9 w-24" />

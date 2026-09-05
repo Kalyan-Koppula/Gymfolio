@@ -2,6 +2,8 @@ import { useLocation, useNavigate } from "react-router-dom"
 import { ChevronRight, Play } from "lucide-react"
 import { TAB_BAR_CLEARANCE } from "@/components/nav/bottom-tab-bar"
 import { useWorkoutSession } from "@/contexts/workout-session-context"
+import { APP_FRAME } from "@/lib/app-frame"
+import { cn } from "@/lib/utils"
 
 export const RESUME_BAR_HEIGHT = "3.25rem"
 
@@ -29,7 +31,10 @@ export function WorkoutResumeBar() {
       <button
         type="button"
         onClick={() => navigate("/train/workout")}
-        className="pointer-events-auto flex h-full w-full max-w-2xl items-center gap-2.5 border-t border-primary/20 bg-primary/10 px-4 backdrop-blur animate-in slide-in-from-bottom-2 duration-200 ease-out supports-[backdrop-filter]:bg-primary/10"
+        className={cn(
+          "pointer-events-auto flex h-full items-center gap-2.5 border-t border-primary/20 bg-primary/10 px-4 backdrop-blur animate-in slide-in-from-bottom-2 duration-200 ease-out supports-[backdrop-filter]:bg-primary/10",
+          APP_FRAME,
+        )}
       >
         <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
           <Play className="size-3.5" />

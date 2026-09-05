@@ -23,7 +23,7 @@ export function SettingsHome() {
   return (
     <div>
       <TopBar title="Settings" />
-      <div className="px-4 py-4">
+      <div className="px-4 py-4 md:px-6 lg:max-w-3xl">
         <div className="overflow-hidden rounded-xl border border-border">
           {items.map((item, i) => (
             <Link

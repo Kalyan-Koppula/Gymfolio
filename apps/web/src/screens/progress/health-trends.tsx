@@ -80,7 +80,7 @@ export function HealthTrends() {
       : null
 
   return (
-    <div className="space-y-8 px-4 py-4">
+    <div className="space-y-8 px-4 py-4 md:px-6 lg:px-8">
       <div className="flex justify-end">
         <RangeSelector value={range} onChange={setRange} />
       </div>

@@ -4,6 +4,7 @@ import { useLocation } from "react-router-dom"
 import { TAB_BAR_CLEARANCE } from "@/components/nav/bottom-tab-bar"
 import { RESUME_BAR_HEIGHT } from "@/components/nav/workout-resume-bar"
 import { useOptionalWorkoutSession } from "@/contexts/workout-session-context"
+import { APP_FRAME } from "@/lib/app-frame"
 import { cn } from "@/lib/utils"
 
 const FULL_SCREEN_PATHS = ["/train/workout"]
@@ -27,12 +28,12 @@ export function StickyActionBar({ children, className }: { children: React.React
   return createPortal(
     <div
       className={cn(
-        "fixed inset-x-0 z-30 border-t border-border bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/85",
+        "fixed inset-x-0 z-30 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85",
         className,
       )}
       style={{ bottom }}
     >
-      <div className="mx-auto max-w-2xl">{children}</div>
+      <div className={cn("px-4 py-3", APP_FRAME)}>{children}</div>
     </div>,
     document.body,
   )

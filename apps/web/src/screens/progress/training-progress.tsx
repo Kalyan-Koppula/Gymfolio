@@ -78,7 +78,7 @@ export function TrainingProgress() {
   const latest = points && points.length > 0 ? points[points.length - 1][metric] : null
 
   return (
-    <div className="space-y-8 px-4 py-4">
+    <div className="space-y-8 px-4 py-4 md:px-6 lg:px-8">
       <section className="space-y-4">
         <div>
           <h2 className="text-sm font-semibold">Exercise progress</h2>

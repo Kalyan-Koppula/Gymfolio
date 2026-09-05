@@ -112,14 +112,17 @@ export function Today() {
       <TopBar title="Today" />
       <OfflineBanner />
 
-      <div className="space-y-6 px-4 py-5">
+      <div className="space-y-6 px-4 py-5 md:px-6 lg:px-8">
         <div>
           <p className="text-sm text-muted-foreground">{todayDate}</p>
-          <h2 className="font-heading text-2xl font-semibold tracking-tight">{greeting()}</h2>
+          <h2 className="font-heading text-2xl font-semibold tracking-tight md:text-3xl">{greeting()}</h2>
         </div>
 
         <PwaInstallCard />
 
+        {/* Mobile: stacked. From tablet: workout + side metrics share a row. */}
+        <div className="flex flex-col gap-6 md:grid md:grid-cols-2 md:items-start lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
+        <div className="min-w-0 space-y-6">
         {routine === undefined || completedToday === undefined ? (
           <Skeleton className="h-40 w-full rounded-xl" />
         ) : routine && doneForToday ? (
@@ -265,7 +268,9 @@ export function Today() {
             onAction={() => navigate("/train/routine/new")}
           />
         )}
+        </div>
 
+        <div className="min-w-0 space-y-6">
         <div className="grid grid-cols-2 gap-3">
           <Link to="/log">
             <Card className="h-full py-3.5 transition-colors hover:bg-muted/40">
@@ -351,6 +356,8 @@ export function Today() {
               </CardContent>
             </Card>
           )}
+        </div>
+        </div>
         </div>
       </div>
     </div>

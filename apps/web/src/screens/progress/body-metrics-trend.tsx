@@ -49,7 +49,7 @@ export function BodyMetricsTrend() {
   const delta = latest != null && first != null ? Math.round((latest - first) * 10) / 10 : null
 
   return (
-    <div className="space-y-5 px-4 py-4">
+    <div className="space-y-5 px-4 py-4 md:px-6 lg:px-8">
       <div className="flex items-end justify-between gap-3">
         <div>
           {loading ? (

@@ -6,6 +6,9 @@ compatibility_flags = ["nodejs_compat"]
 # Local / default wrangler target = *dev*.
 # Staging = `wrangler deploy --env staging` (see docs/STAGING.md).
 # Placeholder IDs are fine for `wrangler dev` (Miniflare). Replace before --remote / deploy.
+#
+# Secrets (MASTER_KEY, YOUTUBE_API_KEY) must NEVER appear in this file.
+# Local: apps/api/.dev.vars (gitignored). Remote: `wrangler secret put … --env <env>`.
 
 [[d1_databases]]
 binding = "DB"
@@ -25,19 +28,28 @@ preview_bucket_name = "gymfolio-media-dev"
 [triggers]
 crons = ["0 4 * * *"]
 
+# Non-sensitive config only. Vars are non-inheritable — redeclare per environment.
 [vars]
 ENVIRONMENT = "development"
-MASTER_KEY = "dev-only-master-key-replace-before-deploy"
 WEBAUTHN_RP_ID = "localhost"
 WEBAUTHN_RP_NAME = "Gymfolio"
 WEBAUTHN_ORIGIN = "http://localhost:5173"
 
+# Declared secret names (values come from .dev.vars locally / Worker secrets remotely).
+[secrets]
+required = ["MASTER_KEY"]
+
 # ---------------------------------------------------------------------------
 # Staging — pnpm --filter api deploy:staging
-# Create resources first, paste real IDs, set WebAuthn host, then secrets.
+# 1) Create D1/KV/R2; paste IDs below.
+# 2) Set WEBAUTHN_* to your real staging host.
+# 3) Uncomment [[env.staging.routes]] and set zone_name / pattern.
+# 4) wrangler secret put MASTER_KEY --env staging
 # ---------------------------------------------------------------------------
 [env.staging]
 name = "gymfolio-api-staging"
+# Optional: hide workers.dev URL for staging once custom route works.
+# workers_dev = false
 
 [env.staging.vars]
 ENVIRONMENT = "staging"
@@ -45,6 +57,15 @@ WEBAUTHN_RP_NAME = "Gymfolio"
 # Replace with your staging hostname before first remote deploy:
 WEBAUTHN_RP_ID = "staging.gymfolio.example.com"
 WEBAUTHN_ORIGIN = "https://staging.gymfolio.example.com"
+
+[env.staging.secrets]
+required = ["MASTER_KEY"]
+
+# Same-origin /api/* on the Pages custom domain (zone must be on Cloudflare DNS).
+# Pattern must end with /* so query strings match. Pages serves /*; this Worker owns /api/*.
+# [[env.staging.routes]]
+# pattern = "staging.gymfolio.example.com/api/*"
+# zone_name = "example.com"
 
 [[env.staging.d1_databases]]
 binding = "DB"

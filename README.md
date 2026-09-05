@@ -23,7 +23,16 @@ Web: `http://localhost:5173` · API: `http://localhost:8787` (proxied as `/api`)
 
 ## Staging
 
-Infrastructure naming and deploy steps: **[docs/STAGING.md](docs/STAGING.md)**.
+Full infra, secrets hygiene (what belongs in git vs Worker secrets), deploy, and smoke checklist:
+
+**[docs/STAGING.md](docs/STAGING.md)**
+
+Quick local secrets setup:
+
+```bash
+cp apps/api/.dev.vars.example apps/api/.dev.vars
+# set MASTER_KEY, then: pnpm db:migrate:local && pnpm dev
+```
 
 ## Brand
 

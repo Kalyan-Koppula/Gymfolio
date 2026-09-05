@@ -1,0 +1,12 @@
+# Copy to `.dev.vars` in this directory (gitignored) for `wrangler dev`.
+# Never commit `.dev.vars` — values are injected as Worker secrets on staging/prod.
+#
+#   cp .dev.vars.example .dev.vars
+#
+# Generate a local master key:
+#   openssl rand -base64 48
+
+MASTER_KEY=replace-with-local-dev-master-key
+
+# Optional — enables YouTube reference lookup on exercise detail + cron revalidation.
+# YOUTUBE_API_KEY=

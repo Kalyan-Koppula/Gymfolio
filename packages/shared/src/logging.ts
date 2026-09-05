@@ -48,6 +48,18 @@ export const HydrationTodayResponseSchema = z.object({
 })
 export type HydrationTodayResponse = z.infer<typeof HydrationTodayResponseSchema>
 
+/** One calendar day’s summed hydration (Progress → Health). */
+export const HydrationDailyTotalSchema = z.object({
+  date: isoDate,
+  totalMl: z.number().int().nonnegative(),
+})
+export type HydrationDailyTotal = z.infer<typeof HydrationDailyTotalSchema>
+
+export const HydrationHistoryResponseSchema = z.object({
+  days: z.array(HydrationDailyTotalSchema),
+})
+export type HydrationHistoryResponse = z.infer<typeof HydrationHistoryResponseSchema>
+
 const timeOfDay = z.string().regex(/^\d{2}:\d{2}$/, "expected HH:MM")
 
 export const SleepEntrySchema = z.object({

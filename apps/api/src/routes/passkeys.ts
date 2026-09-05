@@ -158,4 +158,66 @@ route.post("/login-verify", async (c) => {
   return c.json({ user: serializeUser(user) })
 })
 
+/** List this account's registered passkeys (no sensitive credential material). */
+route.get("/", requireAuth, async (c) => {
+  const { userId } = c.get("auth")
+  const db = getDb(c.env.DB)
+  const rows = await db.select().from(credentials).where(eq(credentials.userId, userId))
+  rows.sort((a, b) => b.createdAt - a.createdAt)
+  return c.json({
+    passkeys: rows.map((row) => ({
+      id: row.id,
+      label: row.label,
+      deviceType: row.deviceType,
+      backedUp: row.backedUp === 1,
+      createdAt: row.createdAt,
+      lastUsedAt: row.lastUsedAt,
+    })),
+  })
+})
+
+/** Rename a passkey (label only — the credential itself can't be edited). */
+route.patch("/:id", requireAuth, async (c) => {
+  const { userId } = c.get("auth")
+  const id = c.req.param("id")
+  const body = await c.req.json().catch(() => null)
+  const label = typeof body?.label === "string" ? body.label.trim() : ""
+  if (!label || label.length > 80) return c.json({ error: "Label must be 1–80 characters" }, 400)
+
+  const db = getDb(c.env.DB)
+  const [row] = await db
+    .select()
+    .from(credentials)
+    .where(and(eq(credentials.id, id), eq(credentials.userId, userId)))
+    .limit(1)
+  if (!row) return c.json({ error: "Passkey not found" }, 404)
+
+  await db.update(credentials).set({ label }).where(eq(credentials.id, id))
+  return c.json({
+    passkey: {
+      id: row.id,
+      label,
+      deviceType: row.deviceType,
+      backedUp: row.backedUp === 1,
+      createdAt: row.createdAt,
+      lastUsedAt: row.lastUsedAt,
+    },
+  })
+})
+
+route.delete("/:id", requireAuth, async (c) => {
+  const { userId } = c.get("auth")
+  const id = c.req.param("id")
+  const db = getDb(c.env.DB)
+  const [row] = await db
+    .select()
+    .from(credentials)
+    .where(and(eq(credentials.id, id), eq(credentials.userId, userId)))
+    .limit(1)
+  if (!row) return c.json({ error: "Passkey not found" }, 404)
+
+  await db.delete(credentials).where(eq(credentials.id, id))
+  return c.body(null, 204)
+})
+
 export { route as passkeyRoutes }

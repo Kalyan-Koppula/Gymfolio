@@ -28,7 +28,9 @@ export const EQUIPMENT_LABELS: Record<Equipment, string> = {
 }
 
 export type RoutineExercise = SharedRoutineExercise & {
-  lastPerformance?: { reps: number; weightKg: number; date: string }
+  /** Client-only hint from last completed session — never persisted. */
+  lastSets?: Array<{ setIndex: number; reps: number; weightKg: number }>
+  lastPerformanceDate?: string
 }
 
 export type RoutineDay = Omit<SharedRoutineDay, "exercises"> & {
@@ -118,7 +120,7 @@ export function activeDays(days: RoutineDay[]): RoutineDay[] {
 }
 
 /**
- * Save-shaped days: client-only fields (lastPerformance) dropped, dayType/orderIndex/archivedAt
+ * Save-shaped days: client-only fields dropped, dayType/orderIndex/archivedAt
  * guaranteed. Archived days are kept so an undo stays recoverable after a save.
  */
 export function toSaveRoutineDays(days: RoutineDay[]): SharedRoutineDay[] {
@@ -130,11 +132,10 @@ export function toSaveRoutineDays(days: RoutineDay[]): SharedRoutineDay[] {
       dayType: day.dayType,
       orderIndex: day.orderIndex,
       archivedAt: day.archivedAt ?? null,
-      exercises: day.exercises.map(({ exerciseId, targetSets, targetReps, targetWeightKg, orderIndex }, ei) => ({
+      exercises: day.exercises.map(({ exerciseId, targetSets, targetReps, orderIndex }, ei) => ({
         exerciseId,
         targetSets,
         targetReps,
-        targetWeightKg,
         orderIndex: typeof orderIndex === "number" ? orderIndex : ei,
       })),
     }
@@ -147,12 +148,25 @@ export function describeSchedule(schedule: SchedulePattern): string {
     : `${schedule.workDays} on / ${schedule.restDays} off`
 }
 
+/**
+ * Runtime weight suggestion: last logged weight for this set index + 2.5kg.
+ * Extra sets beyond last session use the last available set's weight + 2.5kg.
+ * No prior performance → null (blank field, don't guess).
+ */
+export function suggestedWeightKg(
+  setIndex: number,
+  priorSets: Array<{ setIndex: number; weightKg: number }> | undefined,
+): number | null {
+  if (!priorSets || priorSets.length === 0) return null
+  const sorted = priorSets.slice().sort((a, b) => a.setIndex - b.setIndex)
+  const exact = sorted.find((s) => s.setIndex === setIndex)
+  const base = exact ?? sorted[sorted.length - 1]
+  return Math.round((base.weightKg + 2.5) * 10) / 10
+}
+
+/** @deprecated use suggestedWeightKg — kept briefly for any leftover imports */
 export function suggestNextWeight(re: RoutineExercise): number | null {
-  if (re.targetWeightKg == null) return null
-  if (!re.lastPerformance) return re.targetWeightKg
-  const targetReps = parseInt(re.targetReps, 10) || 0
-  const hitTarget = re.lastPerformance.reps >= targetReps
-  return hitTarget ? Math.round((re.lastPerformance.weightKg + 2.5) * 10) / 10 : re.lastPerformance.weightKg
+  return suggestedWeightKg(0, re.lastSets)
 }
 
 const SPLIT_DAY_MUSCLE_FOCUS: Record<string, MuscleGroup[]> = {
@@ -247,7 +261,6 @@ export function autofillDayExercises(
     exerciseId: ex.id,
     targetSets: 3,
     targetReps: "8-12",
-    targetWeightKg: ex.equipment.includes("bodyweight") && ex.equipment.length === 1 ? null : 20,
     orderIndex: i,
   }))
 }

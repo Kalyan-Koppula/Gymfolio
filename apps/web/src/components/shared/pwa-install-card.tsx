@@ -1,15 +1,57 @@
-import * as React from "react"
 import { Share, SquarePlus, X } from "lucide-react"
+import * as React from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 
+const STORAGE_KEY = "fitness-tracker:pwa-install-dismissed-at"
+const SNOOZE_MS = 30 * 24 * 60 * 60 * 1000
+
+function isRunningInstalled(): boolean {
+  if (typeof window === "undefined") return false
+  if (window.matchMedia("(display-mode: standalone)").matches) return true
+  // iOS Safari home-screen launch
+  const nav = window.navigator as Navigator & { standalone?: boolean }
+  return nav.standalone === true
+}
+
+function isSnoozed(): boolean {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return false
+    const dismissedAt = Number(raw)
+    if (!Number.isFinite(dismissedAt)) return false
+    return Date.now() - dismissedAt < SNOOZE_MS
+  } catch {
+    return false
+  }
+}
+
 /**
- * §3.15 — iOS Safari has no native install prompt API, so this is a custom
- * "Add to Home Screen" instructional card. Shown once, dismissible, not nagging.
+ * §3.15 — instructional "Add to Home Screen" card.
+ * Never shown when already installed; after dismiss, snoozed for 30 days.
  */
 export function PwaInstallCard() {
-  const [dismissed, setDismissed] = React.useState(false)
-  if (dismissed) return null
+  const [visible, setVisible] = React.useState(false)
+
+  React.useEffect(() => {
+    if (isRunningInstalled()) {
+      setVisible(false)
+      return
+    }
+    setVisible(!isSnoozed())
+  }, [])
+
+  if (!visible) return null
+
+  function dismiss() {
+    try {
+      localStorage.setItem(STORAGE_KEY, String(Date.now()))
+    } catch {
+      // ignore quota / private mode
+    }
+    setVisible(false)
+  }
+
   return (
     <Card className="relative border-primary/30 bg-primary/5 py-4">
       <Button
@@ -17,7 +59,7 @@ export function PwaInstallCard() {
         size="icon"
         aria-label="Dismiss install prompt"
         className="absolute top-2 right-2 size-8"
-        onClick={() => setDismissed(true)}
+        onClick={dismiss}
       >
         <X className="size-4" />
       </Button>

@@ -50,3 +50,18 @@ export const ChangePasswordInputSchema = z.object({
   newPassword: z.string().min(12).max(256),
 })
 export type ChangePasswordInput = z.infer<typeof ChangePasswordInputSchema>
+
+export const PasskeyListItemSchema = z.object({
+  id: z.string(),
+  label: z.string().nullable(),
+  deviceType: z.string().nullable(),
+  backedUp: z.boolean(),
+  createdAt: z.number(),
+  lastUsedAt: z.number().nullable(),
+})
+export type PasskeyListItem = z.infer<typeof PasskeyListItemSchema>
+
+export const UpdatePasskeyInputSchema = z.object({
+  label: z.string().trim().min(1).max(80),
+})
+export type UpdatePasskeyInput = z.infer<typeof UpdatePasskeyInputSchema>

@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 import { Bar, BarChart, CartesianGrid, XAxis } from "recharts"
 import { TopBar } from "@/components/nav/top-bar"
@@ -16,6 +17,7 @@ const chartConfig = {
 } satisfies ChartConfig
 
 export function AdherenceHistory() {
+  const navigate = useNavigate()
   const [history, setHistory] = React.useState<AdherenceWeek[] | null>(null)
   const [sessions, setSessions] = React.useState<WorkoutSessionSummary[] | null>(null)
 
@@ -49,7 +51,7 @@ export function AdherenceHistory() {
 
   return (
     <div>
-      <TopBar title="Adherence & history" />
+      <TopBar title="Adherence & history" back />
       <div className="space-y-5 px-4 py-4">
         <div>
           {history == null ? (
@@ -127,7 +129,11 @@ export function AdherenceHistory() {
                 </TableHeader>
                 <TableBody>
                   {sessions.map((s) => (
-                    <TableRow key={s.id}>
+                    <TableRow
+                      key={s.id}
+                      className="cursor-pointer"
+                      onClick={() => navigate(`/progress/session/${s.id}`)}
+                    >
                       <TableCell className="font-medium">{s.dayLabel}</TableCell>
                       <TableCell className="text-muted-foreground">{s.date}</TableCell>
                       <TableCell className="text-right tabular-nums">

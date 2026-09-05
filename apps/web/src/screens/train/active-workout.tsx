@@ -19,14 +19,20 @@ import {
   getCycleStep,
   getLastPerformances,
   getRoutine,
+  getWorkoutForDate,
   logWorkoutSet,
   startWorkout,
 } from "@/lib/api-client"
 import { useWorkoutSession } from "@/contexts/workout-session-context"
-import { activeDays, suggestNextWeight, type RoutineDay } from "@/lib/stub-data"
+import { activeDays, suggestedWeightKg, type RoutineDay } from "@/lib/stub-data"
 import type { LastPerformance, Routine } from "shared"
 
-type SetLog = { reps: number; weightKg: number; completed: boolean }
+type SetLog = {
+  reps: number
+  weightKg: number | null
+  completed: boolean
+  setId?: string
+}
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10)
@@ -40,6 +46,14 @@ export function ActiveWorkout() {
   const [performances, setPerformances] = React.useState<LastPerformance[]>([])
 
   React.useEffect(() => {
+    getWorkoutForDate(todayIso())
+      .then((res) => {
+        if (res.completed) {
+          toast.message("Workout already complete for today")
+          navigate("/today", { replace: true })
+        }
+      })
+      .catch(() => {})
     getRoutine()
       .then(async (res) => {
         const r = res.routine
@@ -57,7 +71,7 @@ export function ActiveWorkout() {
     getLastPerformances()
       .then((res) => setPerformances(res.performances))
       .catch(() => {})
-  }, [])
+  }, [navigate])
 
   if (routine === undefined || exercisesLoading) {
     return (
@@ -119,7 +133,7 @@ export function ActiveWorkout() {
     exercises: day.exercises.map((re) => {
       const perf = performances.find((p) => p.exerciseId === re.exerciseId)
       return perf
-        ? { ...re, lastPerformance: { reps: perf.reps, weightKg: perf.weightKg, date: perf.date } }
+        ? { ...re, lastSets: perf.sets, lastPerformanceDate: perf.date }
         : re
     }),
   }
@@ -155,19 +169,30 @@ function ActiveWorkoutSession({
     Object.fromEntries(
       day.exercises.map((re) => [
         re.exerciseId,
-        Array.from({ length: re.targetSets }, () => ({
-          reps: re.lastPerformance?.reps ?? (parseInt(re.targetReps) || 10),
-          weightKg: suggestNextWeight(re) ?? 20,
-        })).map((s) => ({ ...s, completed: false })),
+        Array.from({ length: re.targetSets }, (_, setIndex) => {
+          const prior = re.lastSets?.find((s) => s.setIndex === setIndex) ?? re.lastSets?.[re.lastSets.length - 1]
+          return {
+            reps: prior?.reps ?? (parseInt(re.targetReps) || 10),
+            weightKg: suggestedWeightKg(setIndex, re.lastSets),
+            completed: false,
+          }
+        }),
       ]),
     ),
   )
   const sets = setsByExercise[target.exerciseId]
+  const [editingSetIndex, setEditingSetIndex] = React.useState<number | null>(null)
   const currentSetIndex = sets.findIndex((s) => !s.completed)
-  const activeSetIndex = currentSetIndex === -1 ? sets.length - 1 : currentSetIndex
+  const activeSetIndex =
+    editingSetIndex != null && sets[editingSetIndex]?.completed
+      ? editingSetIndex
+      : currentSetIndex === -1
+        ? sets.length - 1
+        : currentSetIndex
   const completedCount = sets.filter((s) => s.completed).length
+  const isEditingLogged = editingSetIndex != null && sets[editingSetIndex]?.completed === true
 
-  const { status, run } = useApiWrite("Set logged")
+  const { status, run } = useApiWrite<{ set: import("shared").WorkoutLogSet; setsCompleted: number }>("Set logged")
   const { status: finishStatus, run: runFinish } = useApiWrite("Workout saved")
 
   const totalPlannedSets = day.exercises.reduce((n, e) => n + e.targetSets, 0)
@@ -195,6 +220,7 @@ function ActiveWorkoutSession({
                 reps: logged.actualReps,
                 weightKg: logged.actualWeightKg,
                 completed: true,
+                setId: logged.id,
               }
             }
             return { ...next }
@@ -220,15 +246,22 @@ function ActiveWorkoutSession({
       return
     }
     const active = sets[activeSetIndex]
+    if (active.weightKg == null) {
+      toast.error("Enter a weight before logging — or tap + to set one")
+      return
+    }
     run(
       () =>
         logWorkoutSet(workoutId, {
           exerciseId: target.exerciseId,
           setIndex: activeSetIndex,
           actualReps: active.reps,
-          actualWeightKg: active.weightKg,
+          actualWeightKg: active.weightKg!,
         }),
-      () => updateSet(activeSetIndex, { completed: true }),
+      (res) => {
+        updateSet(activeSetIndex, { completed: true, setId: res.set.id })
+        setEditingSetIndex(null)
+      },
     )
   }
 
@@ -239,10 +272,11 @@ function ActiveWorkoutSession({
     }
     runFinish(
       () => finishWorkout(workoutId),
-      () => {
-        // Drop the resume bar immediately, then reconcile against the server.
+      async () => {
+        // Clear local resume state first; await server reconcile so a stale
+        // duplicate in_progress can't repopulate the mini-bar.
         clearSession()
-        void refreshSession()
+        await refreshSession()
         navigate("/today")
       },
     )
@@ -299,7 +333,6 @@ function ActiveWorkoutSession({
           <div className="flex-1 space-y-1">
             <p className="text-sm text-muted-foreground">
               Target: {target.targetSets} × {target.targetReps}
-              {target.targetWeightKg ? ` @ ${target.targetWeightKg}kg` : ""}
             </p>
             <div className="flex flex-wrap gap-1">
               {sets.map((s, i) => (
@@ -324,19 +357,16 @@ function ActiveWorkoutSession({
 
         <Card className="border-primary/30">
           <CardContent className="space-y-4">
-            {target.lastPerformance && (
+            {target.lastSets && target.lastSets.length > 0 && (
               <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
                 <History className="size-3.5" />
-                Last time: {target.lastPerformance.reps} reps @ {target.lastPerformance.weightKg}kg
-                {suggestNextWeight(target) !== target.lastPerformance.weightKg && (
-                  <span className="font-medium text-success">
-                    → suggested {suggestNextWeight(target)}kg today
-                  </span>
-                )}
+                Last session ({target.lastPerformanceDate}):{" "}
+                {target.lastSets.map((s) => `${s.reps}×${s.weightKg}kg`).join(", ")}
+                <span className="font-medium text-success">→ +2.5kg suggested</span>
               </div>
             )}
             <p className="text-center text-sm font-medium text-muted-foreground">
-              Set {activeSetIndex + 1} of {totalSets}
+              {isEditingLogged ? `Edit set ${activeSetIndex + 1}` : `Set ${activeSetIndex + 1} of ${totalSets}`}
             </p>
             <div className="flex items-center justify-center gap-8">
               <div className="flex flex-col items-center gap-1.5">
@@ -369,17 +399,22 @@ function ActiveWorkoutSession({
             <div className="space-y-1.5">
               {sets.map((s, i) =>
                 s.completed ? (
-                  <div
+                  <button
+                    type="button"
                     key={i}
-                    className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-sm animate-in fade-in slide-in-from-top-1 duration-200 ease-out"
+                    onClick={() => setEditingSetIndex(i)}
+                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm animate-in fade-in slide-in-from-top-1 duration-200 ease-out ${
+                      editingSetIndex === i ? "bg-primary/10 ring-1 ring-primary/30" : "bg-muted/50"
+                    }`}
                   >
                     <span className="flex items-center gap-2">
                       <Check className="size-3.5 text-success" /> Set {i + 1}
+                      <span className="text-xs text-muted-foreground">Tap to edit</span>
                     </span>
                     <span className="font-medium">
-                      {s.reps} reps @ {s.weightKg}kg
+                      {s.reps} reps @ {s.weightKg ?? "—"}kg
                     </span>
-                  </div>
+                  </button>
                 ) : null,
               )}
             </div>
@@ -388,8 +423,21 @@ function ActiveWorkoutSession({
       </div>
 
       <StickyActionBar>
-        <div key={completedCount === totalSets ? "advance" : "log"} className="flex gap-2 animate-in fade-in zoom-in-95 duration-200 ease-out">
-          {completedCount === totalSets ? (
+        <div className="flex gap-2 animate-in fade-in zoom-in-95 duration-200 ease-out">
+          {isEditingLogged ? (
+            <>
+              <Button variant="outline" className="h-12 flex-1" onClick={() => setEditingSetIndex(null)}>
+                Cancel
+              </Button>
+              <Button
+                className="h-12 flex-1 text-base"
+                onClick={logSet}
+                disabled={status === "saving" || !workoutId}
+              >
+                {status === "saving" ? "Saving…" : "Save changes"}
+              </Button>
+            </>
+          ) : completedCount === totalSets ? (
             isLastExercise ? (
               <Button
                 className="h-12 w-full text-base"
@@ -400,7 +448,13 @@ function ActiveWorkoutSession({
                 {finishStatus === "saving" ? "Saving…" : "Finish workout"}
               </Button>
             ) : (
-              <Button className="h-12 w-full text-base" onClick={() => setExIndex((i) => i + 1)}>
+              <Button
+                className="h-12 w-full text-base"
+                onClick={() => {
+                  setEditingSetIndex(null)
+                  setExIndex((i) => i + 1)
+                }}
+              >
                 Next exercise <ChevronRight className="size-4" />
               </Button>
             )
@@ -412,7 +466,6 @@ function ActiveWorkoutSession({
                 aria-label="Leave workout"
                 className="size-12 shrink-0"
                 onClick={() => {
-                  // The session stays open server-side — the resume bar brings them back.
                   void refreshSession()
                   navigate("/today")
                 }}

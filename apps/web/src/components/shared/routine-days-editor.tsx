@@ -1,6 +1,6 @@
 import * as React from "react"
 import { toast } from "sonner"
-import { ArrowDown, ArrowUp, Check, History, Moon, Pencil, Plus, Trash2 } from "lucide-react"
+import { ArrowDown, ArrowUp, Check, Moon, Pencil, Plus, Trash2 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -12,7 +12,6 @@ import { AddExerciseSheet } from "@/components/shared/add-exercise-sheet"
 import {
   activeDays,
   normalizeRoutineDay,
-  suggestNextWeight,
   type Equipment,
   type RoutineDay,
 } from "@/lib/stub-data"
@@ -70,7 +69,7 @@ export function RoutineDaysEditor({
   function updateExercise(
     dayId: string,
     exerciseId: string,
-    patch: Partial<{ targetSets: number; targetReps: string; targetWeightKg: number | null }>,
+    patch: Partial<{ targetSets: number; targetReps: string }>,
   ) {
     setDays((prev) =>
       prev.map((d) =>
@@ -109,7 +108,6 @@ export function RoutineDaysEditor({
               exerciseId,
               targetSets: 3,
               targetReps: "10",
-              targetWeightKg: 20,
               orderIndex: d.exercises.length,
             },
           ],
@@ -328,7 +326,6 @@ export function RoutineDaysEditor({
                   .map((re, exIndex, sorted) => {
                   const ex = byId(re.exerciseId)
                   if (!ex) return null
-                  const suggested = suggestNextWeight(re)
                   return (
                     <Card key={re.exerciseId} className="py-3">
                       <CardContent className="space-y-3 px-3.5">
@@ -369,15 +366,9 @@ export function RoutineDaysEditor({
                                 </button>
                               </div>
                             </div>
-                            {re.lastPerformance && (
-                              <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                                <History className="size-3" />
-                                Last time: {re.lastPerformance.reps} × {re.lastPerformance.weightKg}kg
-                                {suggested !== re.lastPerformance.weightKg && (
-                                  <span className="font-medium text-success">→ {suggested}kg suggested</span>
-                                )}
-                              </p>
-                            )}
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              Weight is suggested at workout time from your last session (+2.5kg).
+                            </p>
                           </div>
                         </div>
                         <div className="flex items-center justify-between gap-2">
@@ -392,13 +383,6 @@ export function RoutineDaysEditor({
                             value={parseLeadingInt(re.targetReps, 10)}
                             onChange={(v) => updateExercise(day.id, re.exerciseId, { targetReps: String(v) })}
                             min={1}
-                          />
-                          <StepperField
-                            label="Weight"
-                            value={re.targetWeightKg ?? 0}
-                            onChange={(v) => updateExercise(day.id, re.exerciseId, { targetWeightKg: v })}
-                            step={2.5}
-                            suffix="kg"
                           />
                         </div>
                       </CardContent>

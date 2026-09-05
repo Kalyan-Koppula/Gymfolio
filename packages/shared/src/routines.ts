@@ -13,7 +13,6 @@ export const RoutineExerciseSchema = z.object({
   exerciseId: z.string(),
   targetSets: z.number().int().positive(),
   targetReps: z.string(),
-  targetWeightKg: z.number().nullable(),
   /** Position within the day; omitted on older saves — backfilled from array index. */
   orderIndex: z.number().int().nonnegative().optional(),
 })

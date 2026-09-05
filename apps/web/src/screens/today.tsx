@@ -1,7 +1,7 @@
 import * as React from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { toast } from "sonner"
-import { ChevronRight, Droplets, Flame, ListChecks, Moon, Play, SkipForward, Eye } from "lucide-react"
+import { CheckCircle2, ChevronRight, Droplets, Eye, Flame, ListChecks, Moon, Play, SkipForward } from "lucide-react"
 import { TopBar } from "@/components/nav/top-bar"
 import { OfflineBanner } from "@/components/shared/offline-banner"
 import { EmptyState } from "@/components/shared/empty-state"
@@ -18,11 +18,12 @@ import {
   getRoutine,
   getRecentWorkouts,
   getCycleStep,
+  getWorkoutForDate,
   skipWorkout,
 } from "@/lib/api-client"
 import { useExercises } from "@/hooks/use-exercises"
 import { useWorkoutSession } from "@/contexts/workout-session-context"
-import type { UserSettings, Routine, WorkoutSessionSummary } from "shared"
+import type { UserSettings, Routine, WorkoutSessionSummary, WorkoutLog } from "shared"
 import { activeDays, describeSchedule } from "@/lib/stub-data"
 
 function todayIso() {
@@ -52,6 +53,7 @@ export function Today() {
   const [lastSession, setLastSession] = React.useState<WorkoutSessionSummary | null | undefined>(undefined)
   const [skipping, setSkipping] = React.useState(false)
   const [planOpen, setPlanOpen] = React.useState(false)
+  const [completedToday, setCompletedToday] = React.useState<WorkoutLog | null | undefined>(undefined)
 
   React.useEffect(() => {
     getHydrationToday()
@@ -63,6 +65,9 @@ export function Today() {
     getSettings()
       .then(setSettings)
       .catch(() => toast.error("Couldn't load your settings"))
+    getWorkoutForDate(todayIso())
+      .then((res) => setCompletedToday(res.completed))
+      .catch(() => setCompletedToday(null))
     getRoutine()
       .then(async (res) => {
         setRoutine(res.routine)
@@ -82,6 +87,7 @@ export function Today() {
   const today = slots.length > 0 ? slots[cycleStep % slots.length] : null
   const dayPosition = slots.length > 0 ? (cycleStep % slots.length) + 1 : 0
   const isRestDay = today?.dayType === "rest"
+  const doneForToday = completedToday != null
 
   async function skipToday() {
     if (!today || slots.length === 0) return
@@ -114,8 +120,39 @@ export function Today() {
 
         <PwaInstallCard />
 
-        {routine === undefined ? (
+        {routine === undefined || completedToday === undefined ? (
           <Skeleton className="h-40 w-full rounded-xl" />
+        ) : routine && doneForToday ? (
+          <Card className="overflow-hidden border-success/30 bg-success/5 py-0">
+            <CardContent className="space-y-3 p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-success/15">
+                  <CheckCircle2 className="size-5 text-success" />
+                </div>
+                <div>
+                  <Badge className="mb-1.5" variant="secondary">
+                    {completedToday.dayLabel}
+                  </Badge>
+                  <p className="font-heading text-lg font-semibold">Workout complete — nice work</p>
+                  <p className="text-sm text-muted-foreground">
+                    You're done for today. Next session unlocks tomorrow.
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {completedToday.setsCompleted}/{completedToday.setsPlanned} sets ·{" "}
+                    {completedToday.completionPct}% complete
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                className="h-11 w-full"
+                render={<Link to={`/progress/session/${completedToday.id}`} />}
+                nativeButton={false}
+              >
+                Review / edit today's sets
+              </Button>
+            </CardContent>
+          </Card>
         ) : routine && today ? (
           <Card className="overflow-hidden border-primary/25 py-0">
             <CardContent className="space-y-4 p-4">
@@ -174,7 +211,6 @@ export function Today() {
                               <span className="min-w-0 font-medium">{name}</span>
                               <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                                 {re.targetSets} × {re.targetReps}
-                                {re.targetWeightKg != null ? ` @ ${re.targetWeightKg}kg` : ""}
                               </span>
                             </li>
                           )

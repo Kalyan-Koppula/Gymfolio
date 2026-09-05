@@ -18,6 +18,7 @@ import {
   BodyMetricEntrySchema,
   CreateBodyMetricEntryInputSchema,
   HydrationTodayResponseSchema,
+  HydrationHistoryResponseSchema,
   CreateHydrationEntryInputSchema,
   SleepEntrySchema,
   CreateSleepEntryInputSchema,
@@ -48,9 +49,13 @@ import {
   WorkoutSessionSummarySchema,
   AdherenceWeekSchema,
   LastPerformanceSchema,
+  TodayWorkoutStatusSchema,
   StartWorkoutInputSchema,
   SkipWorkoutInputSchema,
   LogWorkoutSetInputSchema,
+  UpdateWorkoutSetInputSchema,
+  ExerciseProgressResponseSchema,
+  MuscleVolumeResponseSchema,
   ExerciseSchema,
   AiProviderConfigSchema,
   UpsertAiProviderInputSchema,
@@ -58,14 +63,18 @@ import {
   GenerateRoutineResponseSchema,
   SessionListItemSchema,
   ChangePasswordInputSchema,
+  PasskeyListItemSchema,
+  UpdatePasskeyInputSchema,
   ThemePreferenceSchema,
   UpsertThemePreferenceInputSchema,
   type StartWorkoutInput,
   type SkipWorkoutInput,
   type LogWorkoutSetInput,
+  type UpdateWorkoutSetInput,
   type UpsertAiProviderInput,
   type GenerateRoutineInput,
   type ChangePasswordInput,
+  type UpdatePasskeyInput,
   type UpsertThemePreferenceInput,
   type Exercise,
 } from "shared"
@@ -190,6 +199,23 @@ export function passkeyLoginVerify(flowId: string, response: AuthenticationRespo
   })
 }
 
+export function listPasskeys() {
+  return request("/auth/passkey", { method: "GET" }, z.object({ passkeys: z.array(PasskeyListItemSchema) }))
+}
+
+export function updatePasskey(id: string, input: UpdatePasskeyInput) {
+  UpdatePasskeyInputSchema.parse(input)
+  return request(
+    `/auth/passkey/${id}`,
+    { method: "PATCH", body: JSON.stringify(input) },
+    z.object({ passkey: PasskeyListItemSchema }),
+  )
+}
+
+export function deletePasskey(id: string) {
+  return request<undefined>(`/auth/passkey/${id}`, { method: "DELETE" }, z.undefined())
+}
+
 // --- body metrics ---
 export function getBodyMetrics(): Promise<{ entries: BodyMetricEntry[] }> {
   return request("/body-metrics", { method: "GET" }, z.object({ entries: z.array(BodyMetricEntrySchema) }))
@@ -216,6 +242,10 @@ export function createHydrationEntry(input: CreateHydrationEntryInput) {
     { method: "POST", body: JSON.stringify(input) },
     z.object({ entry: HydrationTodayResponseSchema.shape.entries.element }),
   )
+}
+
+export function getHydrationHistory() {
+  return request("/hydration/history", { method: "GET" }, HydrationHistoryResponseSchema)
 }
 
 // --- sleep ---
@@ -319,6 +349,45 @@ export function getLastPerformances() {
     "/workouts/last-performance",
     { method: "GET" },
     z.object({ performances: z.array(LastPerformanceSchema) }),
+  )
+}
+
+export function getWorkoutForDate(date?: string) {
+  const q = date ? `?date=${encodeURIComponent(date)}` : ""
+  return request(
+    `/workouts/for-date${q}`,
+    { method: "GET" },
+    TodayWorkoutStatusSchema,
+  )
+}
+
+export function getWorkout(id: string) {
+  return request(`/workouts/${id}`, { method: "GET" }, z.object({ workout: WorkoutLogSchema }))
+}
+
+export function updateWorkoutSet(workoutId: string, setId: string, input: UpdateWorkoutSetInput) {
+  UpdateWorkoutSetInputSchema.parse(input)
+  return request(
+    `/workouts/${workoutId}/sets/${setId}`,
+    { method: "PATCH", body: JSON.stringify(input) },
+    z.object({ set: WorkoutLogSetSchema }),
+  )
+}
+
+export function getExerciseProgress(exerciseId: string) {
+  return request(
+    `/workouts/progress/exercise?exerciseId=${encodeURIComponent(exerciseId)}`,
+    { method: "GET" },
+    ExerciseProgressResponseSchema,
+  )
+}
+
+export function getMuscleVolume(days: number | "all") {
+  const param = days === "all" ? "all" : String(days)
+  return request(
+    `/workouts/progress/muscle-volume?days=${param}`,
+    { method: "GET" },
+    MuscleVolumeResponseSchema,
   )
 }
 

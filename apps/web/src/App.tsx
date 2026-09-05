@@ -15,8 +15,12 @@ import { EquipmentProfile } from "@/screens/train/equipment-profile"
 import { RoutineBuilder } from "@/screens/train/routine-builder"
 import { RoutineWizard } from "@/screens/train/routine-wizard"
 import { ActiveWorkout } from "@/screens/train/active-workout"
+import { ProgressHub } from "@/screens/progress/progress-hub"
 import { BodyMetricsTrend } from "@/screens/progress/body-metrics-trend"
+import { TrainingProgress } from "@/screens/progress/training-progress"
+import { HealthTrends } from "@/screens/progress/health-trends"
 import { AdherenceHistory } from "@/screens/progress/adherence-history"
+import { WorkoutSessionDetail } from "@/screens/progress/workout-session-detail"
 import { SettingsHome } from "@/screens/settings/settings-home"
 import { AiProviderSettings } from "@/screens/settings/ai-provider-settings"
 import { AppearanceSettings } from "@/screens/settings/appearance-settings"
@@ -44,9 +48,14 @@ function App() {
           <Route path="/train/routine" element={<RoutineBuilder />} />
           <Route path="/train/routine/new" element={<RoutineWizard />} />
           <Route path="/train/workout" element={<ActiveWorkout />} />
-          <Route path="/progress" element={<BodyMetricsTrend />} />
-          <Route path="/progress/metrics" element={<BodyMetricsTrend />} />
+          <Route path="/progress" element={<ProgressHub />}>
+            <Route index element={<BodyMetricsTrend />} />
+            <Route path="metrics" element={<BodyMetricsTrend />} />
+            <Route path="training" element={<TrainingProgress />} />
+            <Route path="health" element={<HealthTrends />} />
+          </Route>
           <Route path="/progress/adherence" element={<AdherenceHistory />} />
+          <Route path="/progress/session/:id" element={<WorkoutSessionDetail />} />
           <Route path="/settings" element={<SettingsHome />} />
           <Route path="/settings/ai" element={<AiProviderSettings />} />
           <Route path="/settings/appearance" element={<AppearanceSettings />} />

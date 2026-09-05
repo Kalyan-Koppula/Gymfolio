@@ -120,7 +120,6 @@ export function RoutineBuilder() {
                 exerciseId,
                 targetSets: 3,
                 targetReps: "8-12",
-                targetWeightKg: 20,
               })),
             },
             i,

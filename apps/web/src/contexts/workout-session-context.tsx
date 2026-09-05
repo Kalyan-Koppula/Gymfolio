@@ -19,21 +19,29 @@ const WorkoutSessionContext = React.createContext<WorkoutSessionState | null>(nu
 export function WorkoutSessionProvider({ children }: { children: React.ReactNode }) {
   const [workout, setWorkout] = React.useState<WorkoutLog | null>(null)
   const [loading, setLoading] = React.useState(true)
+  const fetchGen = React.useRef(0)
 
   const refresh = React.useCallback(async () => {
+    const gen = ++fetchGen.current
     try {
       const { workout: next } = await getInProgressWorkout()
+      // Ignore stale responses so a late refresh can't resurrect a finished session.
+      if (gen !== fetchGen.current) return next
       setWorkout(next)
       return next
     } catch {
+      if (gen !== fetchGen.current) return null
       setWorkout(null)
       return null
     } finally {
-      setLoading(false)
+      if (gen === fetchGen.current) setLoading(false)
     }
   }, [])
 
-  const clear = React.useCallback(() => setWorkout(null), [])
+  const clear = React.useCallback(() => {
+    fetchGen.current += 1
+    setWorkout(null)
+  }, [])
 
   React.useEffect(() => {
     void refresh()

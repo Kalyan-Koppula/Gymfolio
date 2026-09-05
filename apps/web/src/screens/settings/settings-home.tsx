@@ -6,7 +6,7 @@ import { useSession } from "@/contexts/session-context"
 const ITEMS = [
   { to: "/settings/ai", icon: KeyRound, label: "AI provider", desc: "Bring-your-own-key configuration" },
   { to: "/settings/appearance", icon: Palette, label: "Appearance", desc: "Theme, radius, font pairing" },
-  { to: "/settings/account", icon: ShieldCheck, label: "Account & sessions", desc: "Password, active devices" },
+  { to: "/settings/account", icon: ShieldCheck, label: "Account & sessions", desc: "Passkeys, password, active devices" },
 ]
 
 const OWNER_ITEM = {

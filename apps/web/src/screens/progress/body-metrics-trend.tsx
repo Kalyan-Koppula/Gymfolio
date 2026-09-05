@@ -1,24 +1,16 @@
 import * as React from "react"
 import { toast } from "sonner"
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts"
-import { TopBar } from "@/components/nav/top-bar"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import { EmptyState } from "@/components/shared/empty-state"
+import { RangeSelector, filterEntriesByRange } from "@/components/shared/range-selector"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { getBodyMetrics } from "@/lib/api-client"
 import type { BodyMetricEntry } from "shared"
 import { LineChart as LineChartIcon } from "lucide-react"
-
-const RANGES = [
-  { key: "7", label: "7D", days: 7 },
-  { key: "30", label: "30D", days: 30 },
-  { key: "90", label: "90D", days: 90 },
-  { key: "all", label: "All", days: Infinity },
-]
 
 const chartConfig = {
   weightKg: { label: "Weight", color: "var(--chart-1)" },
@@ -49,8 +41,7 @@ export function BodyMetricsTrend() {
   }, [])
 
   const loading = history === null
-  const days = RANGES.find((r) => r.key === range)!.days
-  const sliced = loading ? [] : days === Infinity ? history : history.slice(-days)
+  const sliced = loading ? [] : filterEntriesByRange(history, range)
   const data = withRollingAverage(sliced)
 
   const latest = sliced.length > 0 ? sliced[sliced.length - 1].weightKg : null
@@ -58,94 +49,83 @@ export function BodyMetricsTrend() {
   const delta = latest != null && first != null ? Math.round((latest - first) * 10) / 10 : null
 
   return (
-    <div>
-      <TopBar title="Body metrics" />
-      <div className="space-y-5 px-4 py-4">
-        <div className="flex items-end justify-between">
-          <div>
-            {loading ? (
-              <Skeleton className="h-9 w-24" />
-            ) : (
-              <p className="font-heading text-3xl font-semibold tracking-tight">{latest != null ? `${latest} kg` : "—"}</p>
-            )}
-            {delta != null && (
-              <p className={`text-sm font-medium ${delta <= 0 ? "text-success" : "text-muted-foreground"}`}>
-                {delta > 0 ? "+" : ""}
-                {delta} kg over this range
-              </p>
-            )}
-          </div>
-          <Tabs value={range} onValueChange={setRange}>
-            <TabsList className="h-9">
-              {RANGES.map((r) => (
-                <TabsTrigger key={r.key} value={r.key} className="text-xs">
-                  {r.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
+    <div className="space-y-5 px-4 py-4">
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          {loading ? (
+            <Skeleton className="h-9 w-24" />
+          ) : (
+            <p className="font-heading text-3xl font-semibold tracking-tight">{latest != null ? `${latest} kg` : "—"}</p>
+          )}
+          {delta != null && (
+            <p className={`text-sm font-medium ${delta <= 0 ? "text-success" : "text-muted-foreground"}`}>
+              {delta > 0 ? "+" : ""}
+              {delta} kg over this range
+            </p>
+          )}
         </div>
+        <RangeSelector value={range} onChange={setRange} />
+      </div>
 
-        {loading ? (
-          <Skeleton className="h-56 w-full rounded-xl" />
-        ) : sliced.length === 0 ? (
-          <EmptyState
-            icon={LineChartIcon}
-            title="No weight entries yet"
-            description="Log your first weigh-in from the Log tab to start seeing a trend here."
-          />
-        ) : (
-          <Card>
-            <CardContent>
-              <ChartContainer config={chartConfig} className="h-56 w-full">
-                <LineChart data={data} margin={{ left: -20, right: 8, top: 8 }}>
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="date"
-                    tickLine={false}
-                    axisLine={false}
-                    tickMargin={8}
-                    tickFormatter={(v: string) => v.slice(5)}
-                    minTickGap={32}
-                  />
-                  <YAxis tickLine={false} axisLine={false} width={36} domain={["dataMin - 1", "dataMax + 1"]} />
-                  <ChartTooltip content={<ChartTooltipContent />} />
+      {loading ? (
+        <Skeleton className="h-56 w-full rounded-xl" />
+      ) : sliced.length === 0 ? (
+        <EmptyState
+          icon={LineChartIcon}
+          title="No weight entries yet"
+          description="Log your first weigh-in from the Log tab to start seeing a trend here."
+        />
+      ) : (
+        <Card>
+          <CardContent>
+            <ChartContainer config={chartConfig} className="h-56 w-full">
+              <LineChart data={data} margin={{ left: -20, right: 8, top: 8 }}>
+                <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="date"
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  tickFormatter={(v: string) => v.slice(5)}
+                  minTickGap={32}
+                />
+                <YAxis tickLine={false} axisLine={false} width={36} domain={["dataMin - 1", "dataMax + 1"]} />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Line
+                  dataKey="weightKg"
+                  type="monotone"
+                  stroke="var(--color-weightKg)"
+                  strokeWidth={2}
+                  dot={false}
+                  connectNulls
+                />
+                {showAvg && (
                   <Line
-                    dataKey="weightKg"
+                    dataKey="rollingAvg"
                     type="monotone"
-                    stroke="var(--color-weightKg)"
+                    stroke="var(--color-rollingAvg)"
                     strokeWidth={2}
+                    strokeDasharray="4 3"
                     dot={false}
                     connectNulls
                   />
-                  {showAvg && (
-                    <Line
-                      dataKey="rollingAvg"
-                      type="monotone"
-                      stroke="var(--color-rollingAvg)"
-                      strokeWidth={2}
-                      strokeDasharray="4 3"
-                      dot={false}
-                      connectNulls
-                    />
-                  )}
-                </LineChart>
-              </ChartContainer>
-            </CardContent>
-          </Card>
-        )}
+                )}
+              </LineChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
+      )}
 
-        <div className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
-          <Label htmlFor="rolling-avg" className="text-sm">
-            Show 7-day rolling average
-          </Label>
-          <Switch id="rolling-avg" checked={showAvg} onCheckedChange={setShowAvg} />
-        </div>
-
-        <p className="text-xs text-muted-foreground">
-          Missing days don't break the line — gaps are bridged rather than shown as broken segments.
-        </p>
+      <div className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
+        <Label htmlFor="rolling-avg" className="text-sm">
+          Show 7-day rolling average
+        </Label>
+        <Switch id="rolling-avg" checked={showAvg} onCheckedChange={setShowAvg} />
       </div>
+
+      <p className="text-xs text-muted-foreground">
+        Missing days don't break the line — gaps are bridged rather than shown as broken segments.
+      </p>
     </div>
   )
 }

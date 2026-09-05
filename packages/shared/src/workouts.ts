@@ -2,7 +2,7 @@ import { z } from "zod"
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD")
 
-export const WorkoutStatusSchema = z.enum(["in_progress", "completed"])
+export const WorkoutStatusSchema = z.enum(["in_progress", "completed", "skipped"])
 export type WorkoutStatus = z.infer<typeof WorkoutStatusSchema>
 
 export const WorkoutLogSetSchema = z.object({
@@ -39,6 +39,13 @@ export const StartWorkoutInputSchema = z.object({
 })
 export type StartWorkoutInput = z.infer<typeof StartWorkoutInputSchema>
 
+export const SkipWorkoutInputSchema = z.object({
+  date: isoDate,
+  dayLabel: z.string().min(1),
+  dayIndex: z.number().int().nonnegative(),
+})
+export type SkipWorkoutInput = z.infer<typeof SkipWorkoutInputSchema>
+
 export const LogWorkoutSetInputSchema = z.object({
   exerciseId: z.string().min(1),
   setIndex: z.number().int().nonnegative(),
@@ -51,6 +58,7 @@ export const WorkoutSessionSummarySchema = z.object({
   id: z.string(),
   dayLabel: z.string(),
   date: isoDate,
+  status: z.enum(["completed", "skipped"]),
   completionPct: z.number().int().min(0).max(100),
   sets: z.number().int().nonnegative(),
   setsPlanned: z.number().int().nonnegative(),
@@ -60,7 +68,15 @@ export type WorkoutSessionSummary = z.infer<typeof WorkoutSessionSummarySchema>
 export const AdherenceWeekSchema = z.object({
   weekLabel: z.string(),
   date: isoDate, // week start (Monday)
-  completionPct: z.number().int().min(0).max(100),
+  /** Planned training slots that resolved this week (completed + skipped). */
+  sessionsPlanned: z.number().int().nonnegative(),
+  sessionsCompleted: z.number().int().nonnegative(),
+  sessionsSkipped: z.number().int().nonnegative(),
+  /**
+   * Adherence %: completed / (completed + skipped).
+   * Skips count against adherence; weeks with no resolved sessions stay null (no-data).
+   */
+  completionPct: z.number().int().min(0).max(100).nullable(),
 })
 export type AdherenceWeek = z.infer<typeof AdherenceWeekSchema>
 

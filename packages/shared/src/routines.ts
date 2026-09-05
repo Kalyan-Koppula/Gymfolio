@@ -14,13 +14,33 @@ export const RoutineExerciseSchema = z.object({
   targetSets: z.number().int().positive(),
   targetReps: z.string(),
   targetWeightKg: z.number().nullable(),
+  /** Position within the day; omitted on older saves — backfilled from array index. */
+  orderIndex: z.number().int().nonnegative().optional(),
 })
 export type RoutineExercise = z.infer<typeof RoutineExerciseSchema>
 
+/** Backfill orderIndex from array position, then sort stably within a day. */
+export function normalizeRoutineExercises(exercises: RoutineExercise[]): RoutineExercise[] {
+  return exercises
+    .map((e, i) => ({
+      ...e,
+      orderIndex: typeof e.orderIndex === "number" ? e.orderIndex : i,
+    }))
+    .slice()
+    .sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
+}
+
+export const DayTypeSchema = z.enum(["training", "rest"])
+export type DayType = z.infer<typeof DayTypeSchema>
+
 export const RoutineDaySchema = z.object({
   id: z.string(),
-  label: z.string(),
+  label: z.string().min(1).max(80),
+  dayType: DayTypeSchema.default("training"),
+  orderIndex: z.number().int().nonnegative(),
   exercises: z.array(RoutineExerciseSchema),
+  /** Soft-delete timestamp — omitted/null means active. Recoverable while still on the routine. */
+  archivedAt: z.number().nullable().optional(),
 })
 export type RoutineDay = z.infer<typeof RoutineDaySchema>
 
@@ -34,3 +54,11 @@ export type SaveRoutineInput = z.infer<typeof SaveRoutineInputSchema>
 
 export const RoutineSchema = SaveRoutineInputSchema.extend({ updatedAt: z.number() })
 export type Routine = z.infer<typeof RoutineSchema>
+
+/** Active (non-archived) days in stable order. */
+export function activeRoutineDays(days: RoutineDay[]): RoutineDay[] {
+  return days
+    .filter((d) => d.archivedAt == null)
+    .slice()
+    .sort((a, b) => a.orderIndex - b.orderIndex)
+}

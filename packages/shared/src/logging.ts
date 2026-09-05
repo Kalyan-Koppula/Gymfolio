@@ -21,6 +21,9 @@ export const CreateBodyMetricEntryInputSchema = z.object({
   measurements: z.record(z.string(), z.number()).optional(),
 })
 export type CreateBodyMetricEntryInput = z.infer<typeof CreateBodyMetricEntryInputSchema>
+/** Alias — POST is an upsert by date. */
+export const UpsertBodyMetricEntryInputSchema = CreateBodyMetricEntryInputSchema
+export type UpsertBodyMetricEntryInput = CreateBodyMetricEntryInput
 
 // One row per log — a quick-add tap is one entry, not a mutated running total. "Today's
 // total" is a derived SUM(amountMl), computed server-side (see apps/api hydration route).
@@ -65,6 +68,9 @@ export const CreateSleepEntryInputSchema = z.object({
   quality: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
 })
 export type CreateSleepEntryInput = z.infer<typeof CreateSleepEntryInputSchema>
+/** Alias — POST is an upsert by date. */
+export const UpsertSleepEntryInputSchema = CreateSleepEntryInputSchema
+export type UpsertSleepEntryInput = CreateSleepEntryInput
 
 // Daily upsert — one row per date, not an append log (PUT semantics) — plain numeric
 // totals, no per-meal breakdown.

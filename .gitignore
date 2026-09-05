@@ -11,3 +11,7 @@ dist/
 .refdocs/
 .pnpm-store/
 _tmp_*
+e2e-output/
+test-results/
+playwright-report/
+blob-report/

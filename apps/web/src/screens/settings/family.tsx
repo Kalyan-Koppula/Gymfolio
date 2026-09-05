@@ -102,8 +102,11 @@ export function Family() {
     }
   }
 
+  // navigator.share is typed as always-present but is absent on desktop browsers.
+  const canShare = "share" in navigator
+
   async function handleShare(url: string) {
-    if (navigator.share) {
+    if (canShare) {
       try {
         await navigator.share({ title: "Join our fitness tracker", url })
         return
@@ -197,11 +200,13 @@ export function Family() {
                 if (!open) closeDialog()
               }}
             >
-              <DialogTrigger asChild>
-                <Button size="sm" className="h-8">
-                  <UserPlus className="size-3.5" /> Send invite
-                </Button>
-              </DialogTrigger>
+              <DialogTrigger
+                render={
+                  <Button size="sm" className="h-8">
+                    <UserPlus className="size-3.5" /> Send invite
+                  </Button>
+                }
+              />
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Invite a family member</DialogTitle>
@@ -240,8 +245,8 @@ export function Family() {
                   ) : (
                     <div className="flex w-full gap-2">
                       <Button variant="outline" className="flex-1" onClick={() => handleShare(joinUrl)}>
-                        {navigator.share ? <Share2 className="size-4" /> : <Copy className="size-4" />}
-                        {navigator.share ? "Share" : "Copy link"}
+                        {canShare ? <Share2 className="size-4" /> : <Copy className="size-4" />}
+                        {canShare ? "Share" : "Copy link"}
                       </Button>
                       <Button className="flex-1" onClick={closeDialog}>
                         Done

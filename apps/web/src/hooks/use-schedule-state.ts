@@ -6,24 +6,30 @@ import { ROTATING_PATTERNS, WEEKDAYS, defaultWeekdaysFor, type SchedulePattern }
  * and Onboarding's workout-setup steps share one implementation instead of two copies. */
 export function useScheduleState(initialDaysPerWeek = 4) {
   const [scheduleMode, setScheduleMode] = React.useState<"weekly" | "rotating">("weekly")
-  const [daysPerWeek, setDaysPerWeekState] = React.useState(initialDaysPerWeek)
-  const [pinnedWeekdays, setPinnedWeekdays] = React.useState<string[]>(() => defaultWeekdaysFor(initialDaysPerWeek))
+  // Day count is derived from pinnedWeekdays — never a separate counter that can drift.
+  const [pinnedWeekdays, setPinnedWeekdays] = React.useState<string[]>(() =>
+    defaultWeekdaysFor(initialDaysPerWeek),
+  )
   const [rotatingPattern, setRotatingPattern] = React.useState(ROTATING_PATTERNS[2]) // "3 on / 1 off"
   const [customWorkDays, setCustomWorkDays] = React.useState(3)
   const [customRestDays, setCustomRestDays] = React.useState(1)
   const [useCustomRotation, setUseCustomRotation] = React.useState(false)
 
+  const daysPerWeek = pinnedWeekdays.length
+
   function setDaysPerWeek(v: number) {
-    setDaysPerWeekState(v)
     setPinnedWeekdays(defaultWeekdaysFor(v))
   }
 
   function toggleWeekday(day: string) {
-    setPinnedWeekdays((prev) =>
-      prev.includes(day)
-        ? prev.filter((d) => d !== day)
-        : [...prev, day].sort((a, b) => WEEKDAYS.indexOf(a) - WEEKDAYS.indexOf(b)),
-    )
+    setPinnedWeekdays((prev) => {
+      if (prev.includes(day)) {
+        // Keep at least one pinned day so daysPerWeek never collapses to 0.
+        if (prev.length <= 1) return prev
+        return prev.filter((d) => d !== day)
+      }
+      return [...prev, day].sort((a, b) => WEEKDAYS.indexOf(a) - WEEKDAYS.indexOf(b))
+    })
   }
 
   const schedule: SchedulePattern =

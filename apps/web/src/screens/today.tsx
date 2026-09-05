@@ -1,7 +1,7 @@
 import * as React from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { toast } from "sonner"
-import { ChevronRight, Droplets, Flame, ListChecks, Play } from "lucide-react"
+import { ChevronRight, Droplets, Flame, ListChecks, Moon, Play, SkipForward, Eye } from "lucide-react"
 import { TopBar } from "@/components/nav/top-bar"
 import { OfflineBanner } from "@/components/shared/offline-banner"
 import { EmptyState } from "@/components/shared/empty-state"
@@ -18,10 +18,16 @@ import {
   getRoutine,
   getRecentWorkouts,
   getCycleStep,
+  skipWorkout,
 } from "@/lib/api-client"
 import { useExercises } from "@/hooks/use-exercises"
+import { useWorkoutSession } from "@/contexts/workout-session-context"
 import type { UserSettings, Routine, WorkoutSessionSummary } from "shared"
-import { describeSchedule, getCurrentDay } from "@/lib/stub-data"
+import { activeDays, describeSchedule } from "@/lib/stub-data"
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10)
+}
 
 function greeting() {
   const hour = new Date().getHours()
@@ -33,6 +39,7 @@ function greeting() {
 export function Today() {
   const navigate = useNavigate()
   const { byId } = useExercises()
+  const { refresh: refreshSession } = useWorkoutSession()
   const todayDate = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(
     new Date(),
   )
@@ -43,6 +50,8 @@ export function Today() {
   const [routine, setRoutine] = React.useState<Routine | null | undefined>(undefined)
   const [cycleStep, setCycleStep] = React.useState(0)
   const [lastSession, setLastSession] = React.useState<WorkoutSessionSummary | null | undefined>(undefined)
+  const [skipping, setSkipping] = React.useState(false)
+  const [planOpen, setPlanOpen] = React.useState(false)
 
   React.useEffect(() => {
     getHydrationToday()
@@ -57,8 +66,9 @@ export function Today() {
     getRoutine()
       .then(async (res) => {
         setRoutine(res.routine)
-        if (res.routine && res.routine.days.length > 0) {
-          const step = await getCycleStep(res.routine.days.length)
+        const slots = res.routine ? activeDays(res.routine.days).length : 0
+        if (slots > 0) {
+          const step = await getCycleStep(slots)
           setCycleStep(step.cycleStep)
         }
       })
@@ -68,8 +78,28 @@ export function Today() {
       .catch(() => setLastSession(null))
   }, [])
 
-  const today = routine ? getCurrentDay(routine, cycleStep) : null
-  const dayPosition = routine ? (cycleStep % routine.days.length) + 1 : 0
+  const slots = routine ? activeDays(routine.days) : []
+  const today = slots.length > 0 ? slots[cycleStep % slots.length] : null
+  const dayPosition = slots.length > 0 ? (cycleStep % slots.length) + 1 : 0
+  const isRestDay = today?.dayType === "rest"
+
+  async function skipToday() {
+    if (!today || slots.length === 0) return
+    setSkipping(true)
+    try {
+      await skipWorkout({ date: todayIso(), dayLabel: today.label, dayIndex: cycleStep % slots.length })
+      const step = await getCycleStep(slots.length)
+      setCycleStep(step.cycleStep)
+      await refreshSession()
+      const [recent] = (await getRecentWorkouts(1)).sessions
+      setLastSession(recent ?? null)
+      toast.success(isRestDay ? "Rest day logged — moved to the next day" : "Skipped — moved to the next day")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't skip today")
+    } finally {
+      setSkipping(false)
+    }
+  }
 
   return (
     <div>
@@ -91,30 +121,103 @@ export function Today() {
             <CardContent className="space-y-4 p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <Badge className="mb-1.5">{today.label}</Badge>
-                  <p className="font-heading text-lg font-semibold">{today.exercises.length} exercises planned</p>
-                  <p className="text-sm text-muted-foreground">
-                    {today.exercises.reduce((n, e) => n + e.targetSets, 0)} total sets · ~50 min
-                  </p>
+                  <Badge className="mb-1.5" variant={isRestDay ? "secondary" : "default"}>
+                    {today.label}
+                  </Badge>
+                  {isRestDay ? (
+                    <>
+                      <p className="font-heading text-lg font-semibold">Rest day</p>
+                      <p className="text-sm text-muted-foreground">
+                        Nothing scheduled — recovery is part of the split.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-heading text-lg font-semibold">{today.exercises.length} exercises planned</p>
+                      <p className="text-sm text-muted-foreground">
+                        {today.exercises.reduce((n, e) => n + e.targetSets, 0)} total sets · ~50 min
+                      </p>
+                    </>
+                  )}
                   <p className="text-xs text-muted-foreground">
-                    Day {dayPosition} of {routine.days.length} · {describeSchedule(routine.schedule)}
+                    Day {dayPosition} of {slots.length} · {describeSchedule(routine.schedule)}
                   </p>
                 </div>
               </div>
-              <div className="flex -space-x-2">
-                {today.exercises.slice(0, 5).map((re) => (
-                  <div
-                    key={re.exerciseId}
-                    className="flex size-9 items-center justify-center rounded-full border-2 border-card bg-muted text-[10px] font-medium text-muted-foreground"
-                    title={byId(re.exerciseId)?.name}
+              {!isRestDay && (
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setPlanOpen((o) => !o)}
+                    className="flex w-full items-center justify-between rounded-lg border border-border/80 bg-muted/30 px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-muted/50"
                   >
-                    {byId(re.exerciseId)?.name.slice(0, 2) ?? "?"}
-                  </div>
-                ))}
-              </div>
-              <Button className="h-12 w-full text-base" render={<Link to="/train/workout" />} nativeButton={false}>
-                <Play className="size-4" /> Start workout
-              </Button>
+                    <span className="flex items-center gap-2">
+                      <Eye className="size-4 text-muted-foreground" />
+                      {planOpen ? "Hide today's plan" : "Preview today's plan"}
+                    </span>
+                    <ChevronRight
+                      className={`size-4 text-muted-foreground transition-transform ${planOpen ? "rotate-90" : ""}`}
+                    />
+                  </button>
+                  {planOpen ? (
+                    <ul className="space-y-2 rounded-lg border border-border bg-card px-3 py-2">
+                      {today.exercises
+                        .slice()
+                        .sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
+                        .map((re) => {
+                          const name = byId(re.exerciseId)?.name ?? "Exercise"
+                          return (
+                            <li
+                              key={re.exerciseId}
+                              className="flex items-baseline justify-between gap-3 border-b border-border/60 py-2 text-sm last:border-0"
+                            >
+                              <span className="min-w-0 font-medium">{name}</span>
+                              <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                                {re.targetSets} × {re.targetReps}
+                                {re.targetWeightKg != null ? ` @ ${re.targetWeightKg}kg` : ""}
+                              </span>
+                            </li>
+                          )
+                        })}
+                    </ul>
+                  ) : (
+                    <div className="flex -space-x-2">
+                      {today.exercises.slice(0, 5).map((re) => (
+                        <div
+                          key={re.exerciseId}
+                          className="flex size-9 items-center justify-center rounded-full border-2 border-card bg-muted text-[10px] font-medium text-muted-foreground"
+                          title={byId(re.exerciseId)?.name}
+                        >
+                          {byId(re.exerciseId)?.name.slice(0, 2) ?? "?"}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              {isRestDay ? (
+                <Button
+                  variant="outline"
+                  className="h-12 w-full text-base"
+                  onClick={skipToday}
+                  disabled={skipping}
+                >
+                  <Moon className="size-4" /> {skipping ? "Advancing…" : "Mark rest day done"}
+                </Button>
+              ) : (
+                <div className="flex gap-2">
+                  <Button
+                    className="h-12 flex-1 text-base"
+                    render={<Link to="/train/workout" />}
+                    nativeButton={false}
+                  >
+                    <Play className="size-4" /> Start workout
+                  </Button>
+                  <Button variant="outline" className="h-12 px-4 text-sm" onClick={skipToday} disabled={skipping}>
+                    <SkipForward className="size-4" /> {skipping ? "Skipping…" : "Skip today"}
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         ) : (
@@ -123,7 +226,7 @@ export function Today() {
             title="No active routine yet"
             description="Build one manually, or let AI propose a split from your equipment — either way, editable before you save it."
             actionLabel="Build a routine"
-            onAction={() => navigate("/train/routine")}
+            onAction={() => navigate("/train/routine/new")}
           />
         )}
 
@@ -192,8 +295,16 @@ export function Today() {
                   <p className="text-sm font-medium">{lastSession.dayLabel}</p>
                   <p className="text-xs text-muted-foreground">{lastSession.date}</p>
                 </div>
-                <Badge variant={lastSession.completionPct === 100 ? "default" : "secondary"}>
-                  {lastSession.completionPct}% complete
+                <Badge
+                  variant={
+                    lastSession.status === "skipped"
+                      ? "outline"
+                      : lastSession.completionPct === 100
+                        ? "default"
+                        : "secondary"
+                  }
+                >
+                  {lastSession.status === "skipped" ? "Skipped" : `${lastSession.completionPct}% complete`}
                 </Badge>
               </CardContent>
             </Card>

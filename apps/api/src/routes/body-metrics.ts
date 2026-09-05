@@ -30,6 +30,7 @@ route.get("/", async (c) => {
   return c.json({ entries: rows.map(toResponse) })
 })
 
+// Upsert by tenant+user+date — one weigh-in per day; POST updates existing row.
 route.post("/", async (c) => {
   const body = CreateBodyMetricEntryInputSchema.safeParse(await c.req.json())
   if (!body.success) return c.json({ error: body.error.flatten() }, 400)
@@ -38,21 +39,41 @@ route.post("/", async (c) => {
   const db = getDb(c.env.DB)
   const id = crypto.randomUUID()
   const updatedAt = Date.now()
+  const measurementsJson = body.data.measurements ? JSON.stringify(body.data.measurements) : null
 
-  await db.insert(bodyMetricEntries).values({
-    id,
-    tenantId,
-    userId,
-    date: body.data.date,
-    weightKg: body.data.weightKg,
-    measurementsJson: body.data.measurements ? JSON.stringify(body.data.measurements) : null,
-    updatedAt,
-  })
+  await db
+    .insert(bodyMetricEntries)
+    .values({
+      id,
+      tenantId,
+      userId,
+      date: body.data.date,
+      weightKg: body.data.weightKg,
+      measurementsJson,
+      updatedAt,
+    })
+    .onConflictDoUpdate({
+      target: [bodyMetricEntries.tenantId, bodyMetricEntries.userId, bodyMetricEntries.date],
+      set: {
+        weightKg: body.data.weightKg,
+        measurementsJson,
+        updatedAt,
+      },
+    })
 
-  return c.json(
-    { entry: { id, date: body.data.date, weightKg: body.data.weightKg, measurements: body.data.measurements, updatedAt } },
-    201,
-  )
+  const [row] = await db
+    .select()
+    .from(bodyMetricEntries)
+    .where(
+      and(
+        eq(bodyMetricEntries.tenantId, tenantId),
+        eq(bodyMetricEntries.userId, userId),
+        eq(bodyMetricEntries.date, body.data.date),
+      ),
+    )
+    .limit(1)
+
+  return c.json({ entry: toResponse(row!) })
 })
 
 export { route as bodyMetricsRoutes }

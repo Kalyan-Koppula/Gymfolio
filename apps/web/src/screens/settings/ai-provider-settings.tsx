@@ -6,21 +6,38 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { CheckCircle2, Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react"
+import { CheckCircle2, Eye, EyeOff, ExternalLink, Loader2, ShieldAlert, ShieldCheck } from "lucide-react"
 import { useAiProvider } from "@/contexts/ai-provider-context"
 import { AI_PROVIDERS } from "@/lib/stub-data"
 import { saveAiConfig, testAiConfig } from "@/lib/api-client"
-import type { AiProviderId } from "shared"
+import { DEFAULT_OPENROUTER_MODEL, type AiProviderId } from "shared"
 import { toast } from "sonner"
 
+const OPENROUTER_PRIVACY_URL = "https://openrouter.ai/docs/guides/privacy"
+
+function isFreeModelSlug(slug: string): boolean {
+  const s = slug.trim().toLowerCase()
+  return s === DEFAULT_OPENROUTER_MODEL || s.includes(":free") || s.endsWith("/free")
+}
+
 export function AiProviderSettings() {
-  const { configured, setConfigured, provider, setProvider, refresh } = useAiProvider()
+  const {
+    configured,
+    setConfigured,
+    provider,
+    setProvider,
+    modelSlug,
+    setModelSlug,
+    endpointOverride,
+    setEndpointOverride,
+    refresh,
+  } = useAiProvider()
   const [apiKey, setApiKey] = React.useState("")
   const [showKey, setShowKey] = React.useState(false)
-  const [endpoint, setEndpoint] = React.useState("")
   const [testStatus, setTestStatus] = React.useState<"idle" | "testing" | "ok" | "fail">("idle")
 
-  const current = AI_PROVIDERS.find((p) => p.id === provider)!
+  const current = AI_PROVIDERS.find((p) => p.id === provider) ?? AI_PROVIDERS[0]!
+  const showPrivacyNote = provider === "openrouter" && isFreeModelSlug(modelSlug)
 
   async function saveAndTest() {
     setTestStatus("testing")
@@ -28,7 +45,8 @@ export function AiProviderSettings() {
       await saveAiConfig({
         provider,
         apiKey,
-        endpointOverride: provider === "local" ? endpoint : "",
+        modelSlug: modelSlug.trim() || DEFAULT_OPENROUTER_MODEL,
+        endpointOverride: provider === "local" ? endpointOverride : "",
       })
       const result = await testAiConfig()
       if (result.ok) {
@@ -72,7 +90,13 @@ export function AiProviderSettings() {
               <Label>Provider</Label>
               <Select
                 value={provider}
-                onValueChange={(v) => setProvider(v as AiProviderId)}
+                onValueChange={(v) => {
+                  const next = v as AiProviderId
+                  setProvider(next)
+                  if (next === "openrouter" && !modelSlug.trim()) {
+                    setModelSlug(DEFAULT_OPENROUTER_MODEL)
+                  }
+                }}
                 items={Object.fromEntries(AI_PROVIDERS.map((p) => [p.id, p.label]))}
               >
                 <SelectTrigger className="h-11 w-full">
@@ -89,13 +113,50 @@ export function AiProviderSettings() {
             </div>
 
             <div className="space-y-1.5">
+              <Label htmlFor="model-slug">Model</Label>
+              <Input
+                id="model-slug"
+                className="h-11 text-base"
+                placeholder={provider === "openrouter" ? DEFAULT_OPENROUTER_MODEL : "llama3.3"}
+                value={modelSlug}
+                onChange={(e) => setModelSlug(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                {provider === "openrouter"
+                  ? `Default ${DEFAULT_OPENROUTER_MODEL} auto-routes to a free model. Pinned :free slugs can disappear without warning.`
+                  : `Examples: ${current.models.join(", ")}`}
+              </p>
+            </div>
+
+            {showPrivacyNote && (
+              <Alert variant="destructive">
+                <ShieldAlert className="size-4" />
+                <AlertTitle>Before enabling free models</AlertTitle>
+                <AlertDescription>
+                  Free models may be logged or retained for training by their underlying providers.{" "}
+                  <a
+                    href={OPENROUTER_PRIVACY_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 font-medium underline underline-offset-2"
+                  >
+                    OpenRouter privacy docs
+                    <ExternalLink className="size-3.5" />
+                  </a>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <div className="space-y-1.5">
               <Label htmlFor="api-key">API key</Label>
               <div className="relative">
                 <Input
                   id="api-key"
                   type={showKey ? "text" : "password"}
                   className="h-11 pr-10 text-base"
-                  placeholder="Paste your provider key"
+                  placeholder={
+                    provider === "openrouter" ? "Paste your OpenRouter key" : "Paste your API key"
+                  }
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
                 />
@@ -108,7 +169,6 @@ export function AiProviderSettings() {
                   {showKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                 </button>
               </div>
-              <p className="text-xs text-muted-foreground">Models: {current.models.join(", ")}</p>
             </div>
 
             {provider === "local" && (
@@ -117,14 +177,18 @@ export function AiProviderSettings() {
                 <Input
                   id="endpoint"
                   className="h-11 text-base"
-                  placeholder="http://localhost:11434"
-                  value={endpoint}
-                  onChange={(e) => setEndpoint(e.target.value)}
+                  placeholder="http://localhost:11434/v1"
+                  value={endpointOverride}
+                  onChange={(e) => setEndpointOverride(e.target.value)}
                 />
               </div>
             )}
 
-            <Button className="h-11 w-full" onClick={() => void saveAndTest()} disabled={testStatus === "testing" || !apiKey.trim()}>
+            <Button
+              className="h-11 w-full"
+              onClick={() => void saveAndTest()}
+              disabled={testStatus === "testing" || !apiKey.trim()}
+            >
               {testStatus === "testing" ? (
                 <>
                   <Loader2 className="size-4 animate-spin" /> Saving…
@@ -139,7 +203,9 @@ export function AiProviderSettings() {
                 <CheckCircle2 className="size-4" /> Connection confirmed
               </p>
             )}
-            {testStatus === "fail" && <p className="text-sm text-destructive">Couldn’t verify the key — try again.</p>}
+            {testStatus === "fail" && (
+              <p className="text-sm text-destructive">Couldn’t verify the key — try again.</p>
+            )}
           </CardContent>
         </Card>
       </div>

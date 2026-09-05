@@ -22,10 +22,11 @@ import {
   getSleepHistory,
   createSleepEntry,
   getMacrosForDate,
+  getMacrosHistory,
   upsertMacros,
   getSettings,
 } from "@/lib/api-client"
-import type { BodyMetricEntry, SleepEntry, UserSettings } from "shared"
+import type { BodyMetricEntry, MacroEntry, SleepEntry, UserSettings } from "shared"
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10)
@@ -72,6 +73,8 @@ export function LogHub() {
 }
 
 function WeightTab() {
+  const today = todayIso()
+  const [editDate, setEditDate] = React.useState(today)
   const [weight, setWeight] = React.useState("")
   const [history, setHistory] = React.useState<BodyMetricEntry[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -79,28 +82,48 @@ function WeightTab() {
 
   React.useEffect(() => {
     getBodyMetrics()
-      .then((res) => setHistory(res.entries))
+      .then((res) => {
+        setHistory(res.entries)
+        const todays = res.entries.find((e) => e.date === today)
+        if (todays) {
+          setEditDate(todays.date)
+          setWeight(String(todays.weightKg))
+        }
+      })
       .catch(() => toast.error("Couldn't load weight history"))
       .finally(() => setLoading(false))
-  }, [])
+  }, [today])
+
+  function loadEntry(entry: BodyMetricEntry) {
+    setEditDate(entry.date)
+    setWeight(String(entry.weightKg))
+  }
 
   function handleSave() {
     const weightKg = Number(weight)
     if (!weightKg) return
     run(
-      () => createBodyMetricEntry({ date: todayIso(), weightKg }),
+      () => createBodyMetricEntry({ date: editDate, weightKg }),
       (res) => {
-        setHistory((prev) => [res.entry, ...prev])
-        setWeight("")
+        setHistory((prev) => {
+          const without = prev.filter((e) => e.date !== res.entry.date)
+          return [res.entry, ...without].sort((a, b) => b.date.localeCompare(a.date))
+        })
+        setEditDate(res.entry.date)
+        setWeight(String(res.entry.weightKg))
       },
     )
   }
+
+  const editingPast = editDate !== today
 
   return (
     <div className="space-y-5">
       <Card>
         <CardContent className="space-y-3">
-          <Label htmlFor="weight-input">Today's weight (kg)</Label>
+          <Label htmlFor="weight-input">
+            {editingPast ? `Weight for ${editDate} (kg)` : "Today's weight (kg)"}
+          </Label>
           <div className="flex gap-2">
             <Input
               id="weight-input"
@@ -113,6 +136,21 @@ function WeightTab() {
             />
             <SaveButton status={status} onClick={handleSave} />
           </div>
+          {editingPast && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 px-0 text-muted-foreground"
+              onClick={() => {
+                const todays = history.find((e) => e.date === today)
+                setEditDate(today)
+                setWeight(todays ? String(todays.weightKg) : "")
+              }}
+            >
+              Back to today
+            </Button>
+          )}
         </CardContent>
       </Card>
 
@@ -134,13 +172,17 @@ function WeightTab() {
         ) : (
           <div className="overflow-hidden rounded-xl border border-border">
             {history.slice(0, 5).map((e, i) => (
-              <div
+              <button
                 key={e.id}
-                className={`flex items-center justify-between px-4 py-2.5 text-sm ${i > 0 ? "border-t border-border" : ""}`}
+                type="button"
+                onClick={() => loadEntry(e)}
+                className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-sm transition-colors hover:bg-muted/50 ${
+                  i > 0 ? "border-t border-border" : ""
+                } ${e.date === editDate ? "bg-muted/60" : ""}`}
               >
                 <span className="text-muted-foreground">{e.date}</span>
                 <span className="font-medium">{e.weightKg} kg</span>
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -239,31 +281,76 @@ function HydrationTab() {
 }
 
 function SleepTab() {
+  const today = todayIso()
   const { status, run } = useApiWrite<{ entry: SleepEntry }>("Sleep entry saved")
+  const [editDate, setEditDate] = React.useState(today)
   const [quality, setQuality] = React.useState<1 | 2 | 3 | 4 | 5>(4)
   const [startTime, setStartTime] = React.useState("22:45")
   const [endTime, setEndTime] = React.useState("06:30")
   const [recent, setRecent] = React.useState<SleepEntry[]>([])
   const [loading, setLoading] = React.useState(true)
 
+  function applyEntry(entry: SleepEntry) {
+    setEditDate(entry.date)
+    setStartTime(entry.startTime)
+    setEndTime(entry.endTime)
+    setQuality(entry.quality)
+  }
+
   React.useEffect(() => {
     getSleepHistory()
-      .then((res) => setRecent(res.entries.slice(0, 7).reverse()))
+      .then((res) => {
+        const chron = res.entries.slice(0, 7).reverse()
+        setRecent(chron)
+        const todays = res.entries.find((e) => e.date === today)
+        if (todays) applyEntry(todays)
+      })
       .catch(() => toast.error("Couldn't load sleep history"))
       .finally(() => setLoading(false))
-  }, [])
+  }, [today])
 
   function handleSave() {
     run(
-      () => createSleepEntry({ date: todayIso(), startTime, endTime, quality }),
-      (res) => setRecent((prev) => [...prev.slice(-6), res.entry]),
+      () => createSleepEntry({ date: editDate, startTime, endTime, quality }),
+      (res) => {
+        setRecent((prev) => {
+          const without = prev.filter((e) => e.date !== res.entry.date)
+          return [...without, res.entry].sort((a, b) => a.date.localeCompare(b.date)).slice(-7)
+        })
+        applyEntry(res.entry)
+      },
     )
   }
+
+  const editingPast = editDate !== today
 
   return (
     <div className="space-y-5">
       <Card>
         <CardContent className="space-y-4">
+          {editingPast && (
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">Editing {editDate}</p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8"
+                onClick={() => {
+                  const todays = recent.find((e) => e.date === today)
+                  if (todays) applyEntry(todays)
+                  else {
+                    setEditDate(today)
+                    setStartTime("22:45")
+                    setEndTime("06:30")
+                    setQuality(4)
+                  }
+                }}
+              >
+                Back to today
+              </Button>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="sleep-start">Bedtime</Label>
@@ -292,6 +379,7 @@ function SleepTab() {
               {([1, 2, 3, 4, 5] as const).map((n) => (
                 <button
                   key={n}
+                  type="button"
                   aria-label={`${n} star${n > 1 ? "s" : ""}`}
                   onClick={() => setQuality(n)}
                   className="flex size-11 items-center justify-center transition-transform duration-150 active:scale-90"
@@ -322,7 +410,16 @@ function SleepTab() {
         ) : (
           <div className="flex items-end gap-2 rounded-xl border border-border p-4">
             {recent.map((n) => (
-              <div key={n.id} className="flex flex-1 flex-col items-center gap-1.5">
+              <button
+                key={n.id}
+                type="button"
+                onClick={() => applyEntry(n)}
+                className={cn(
+                  "flex flex-1 flex-col items-center gap-1.5 rounded-md p-0.5 transition-colors",
+                  n.date === editDate ? "bg-muted" : "hover:bg-muted/50",
+                )}
+                aria-label={`Edit sleep for ${n.date}`}
+              >
                 <div className="flex h-24 w-full items-end rounded-md bg-muted">
                   <div
                     className="w-full rounded-md bg-primary"
@@ -330,7 +427,7 @@ function SleepTab() {
                   />
                 </div>
                 <span className="text-[10px] text-muted-foreground">{n.hours}h</span>
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -340,27 +437,49 @@ function SleepTab() {
 }
 
 function MacrosTab() {
-  const { status, run } = useApiWrite<unknown>("Macros saved")
+  const today = todayIso()
+  const { status, run } = useApiWrite<{ entry: MacroEntry }>("Macros saved")
+  const [editDate, setEditDate] = React.useState(today)
   const [values, setValues] = React.useState({ calories: 0, protein: 0, carbs: 0, fat: 0 })
+  const [history, setHistory] = React.useState<MacroEntry[]>([])
   const [settings, setSettings] = React.useState<UserSettings | null>(null)
   const [loading, setLoading] = React.useState(true)
 
+  function applyEntry(entry: MacroEntry) {
+    setEditDate(entry.date)
+    setValues({
+      calories: entry.calories,
+      protein: entry.protein,
+      carbs: entry.carbs,
+      fat: entry.fat,
+    })
+  }
+
   React.useEffect(() => {
-    getMacrosForDate()
-      .then((res) => {
-        if (res.entry) setValues(res.entry)
+    Promise.all([getMacrosForDate(), getMacrosHistory(), getSettings()])
+      .then(([todayRes, historyRes, s]) => {
+        setHistory(historyRes.entries)
+        setSettings(s)
+        if (todayRes.entry) applyEntry(todayRes.entry)
       })
       .catch(() => toast.error("Couldn't load today's macros"))
       .finally(() => setLoading(false))
-    getSettings()
-      .then(setSettings)
-      .catch(() => {})
   }, [])
 
   function handleSave() {
-    run(() => upsertMacros({ date: todayIso(), ...values }))
+    run(
+      () => upsertMacros({ date: editDate, ...values }),
+      (res) => {
+        setHistory((prev) => {
+          const without = prev.filter((e) => e.date !== res.entry.date)
+          return [res.entry, ...without].sort((a, b) => b.date.localeCompare(a.date))
+        })
+        applyEntry(res.entry)
+      },
+    )
   }
 
+  const editingPast = editDate !== today
   const macroFields = settings
     ? ([
         { key: "calories", label: "Calories", unit: "kcal", target: settings.macroTargets.calories },
@@ -374,6 +493,27 @@ function MacrosTab() {
     <div className="space-y-5">
       <Card>
         <CardContent className="space-y-4">
+          {editingPast && (
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">Editing {editDate}</p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8"
+                onClick={() => {
+                  const todays = history.find((e) => e.date === today)
+                  if (todays) applyEntry(todays)
+                  else {
+                    setEditDate(today)
+                    setValues({ calories: 0, protein: 0, carbs: 0, fat: 0 })
+                  }
+                }}
+              >
+                Back to today
+              </Button>
+            </div>
+          )}
           {loading || !settings ? (
             <div className="space-y-4">
               {(["calories", "protein", "carbs", "fat"] as const).map((key) => (
@@ -407,6 +547,36 @@ function MacrosTab() {
           <SaveButton status={status} onClick={handleSave} className="w-full" />
         </CardContent>
       </Card>
+
+      <div>
+        <h3 className="mb-2 text-sm font-semibold">Recent days</h3>
+        {loading ? (
+          <div className="space-y-1.5">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-10 w-full rounded-lg" />
+            ))}
+          </div>
+        ) : history.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No macro days logged yet.</p>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-border">
+            {history.slice(0, 5).map((e, i) => (
+              <button
+                key={e.date}
+                type="button"
+                onClick={() => applyEntry(e)}
+                className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-sm transition-colors hover:bg-muted/50 ${
+                  i > 0 ? "border-t border-border" : ""
+                } ${e.date === editDate ? "bg-muted/60" : ""}`}
+              >
+                <span className="text-muted-foreground">{e.date}</span>
+                <span className="font-medium">{e.calories} kcal</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       <p className="text-xs text-muted-foreground">
         Numeric daily totals only — no per-meal or per-dish logging.
       </p>

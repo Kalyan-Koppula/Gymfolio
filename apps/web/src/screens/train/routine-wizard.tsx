@@ -14,8 +14,9 @@ import { getSettings, saveRoutine } from "@/lib/api-client"
 import { fetchExercises } from "@/hooks/use-exercises"
 import {
   SPLIT_PRESETS,
-  autofillDayExercises,
+  buildDaysForSplit,
   describeSchedule,
+  toSaveRoutineDays,
   type Equipment,
   type RoutineDay,
   type SplitType,
@@ -44,11 +45,6 @@ export function RoutineWizard() {
 
   async function seedDays() {
     if (!splitType) return
-    const preset = SPLIT_PRESETS.find((p) => p.id === splitType)!
-    const labels =
-      preset.dayLabels.length > 0
-        ? preset.dayLabels
-        : Array.from({ length: scheduleState.scheduleMode === "weekly" ? scheduleState.daysPerWeek : schedule.mode === "rotating" ? schedule.workDays : 3 }, (_, i) => `Day ${i + 1}`)
     const pool = await fetchExercises()
     let gear = equipment
     if (gear.length === 0) {
@@ -59,11 +55,8 @@ export function RoutineWizard() {
         // seed without equipment filter
       }
     }
-    const seeded: RoutineDay[] = labels.map((label, i) => ({
-      id: `wizard-day-${i + 1}`,
-      label,
-      exercises: autofillDayExercises(label, gear, pool),
-    }))
+    // Seeds rest days too, so the day count matches the schedule the user just picked.
+    const seeded = buildDaysForSplit(splitType, schedule, gear, pool, "wizard-day")
     setDays(seeded)
     setActiveDay(seeded[0]?.id ?? "")
   }
@@ -86,16 +79,7 @@ export function RoutineWizard() {
           name: `${SPLIT_PRESETS.find((p) => p.id === splitType)?.label} — ${describeSchedule(schedule)}`,
           splitType,
           schedule,
-          days: days.map(({ id, label, exercises }) => ({
-            id,
-            label,
-            exercises: exercises.map(({ exerciseId, targetSets, targetReps, targetWeightKg }) => ({
-              exerciseId,
-              targetSets,
-              targetReps,
-              targetWeightKg,
-            })),
-          })),
+          days: toSaveRoutineDays(days),
         }),
       () => navigate("/train/routine"),
     )
@@ -143,6 +127,7 @@ export function RoutineWizard() {
               activeDay={activeDay}
               onActiveDayChange={setActiveDay}
               equipment={equipment}
+              allowDayMutations={schedule.mode === "weekly"}
             />
           </div>
         )}

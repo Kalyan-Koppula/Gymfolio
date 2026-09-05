@@ -15,7 +15,9 @@ import { exerciseRoutes } from "./routes/exercises.ts"
 import { accountRoutes } from "./routes/account.ts"
 import { aiRoutes } from "./routes/ai.ts"
 import { mediaRoutes } from "./routes/media.ts"
-import type { AppEnv } from "./types.ts"
+import { themeRoutes } from "./routes/theme.ts"
+import { runScheduledJobs } from "./lib/scheduled.ts"
+import type { AppEnv, Bindings } from "./types.ts"
 
 const app = new Hono<AppEnv>()
 
@@ -38,5 +40,17 @@ app.route("/api/exercises", exerciseRoutes)
 app.route("/api/account", accountRoutes)
 app.route("/api/ai", aiRoutes)
 app.route("/api/media", mediaRoutes)
+app.route("/api/theme", themeRoutes)
 
-export default app
+const worker = {
+  fetch: app.fetch,
+  async scheduled(
+    _controller: ScheduledController,
+    env: Bindings,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    ctx.waitUntil(runScheduledJobs(env))
+  },
+}
+
+export default worker

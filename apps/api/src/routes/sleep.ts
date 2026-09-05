@@ -33,6 +33,7 @@ route.get("/", async (c) => {
   return c.json({ entries: rows.map(toResponse) })
 })
 
+// Upsert by tenant+user+date — one sleep log per night; POST updates existing row.
 route.post("/", async (c) => {
   const body = CreateSleepEntryInputSchema.safeParse(await c.req.json())
   if (!body.success) return c.json({ error: body.error.flatten() }, 400)
@@ -42,31 +43,37 @@ route.post("/", async (c) => {
   const id = crypto.randomUUID()
   const updatedAt = Date.now()
 
-  await db.insert(sleepEntries).values({
-    id,
-    tenantId,
-    userId,
-    date: body.data.date,
-    startTime: body.data.startTime,
-    endTime: body.data.endTime,
-    qualityRating: body.data.quality,
-    updatedAt,
-  })
-
-  return c.json(
-    {
-      entry: {
-        id,
-        date: body.data.date,
+  await db
+    .insert(sleepEntries)
+    .values({
+      id,
+      tenantId,
+      userId,
+      date: body.data.date,
+      startTime: body.data.startTime,
+      endTime: body.data.endTime,
+      qualityRating: body.data.quality,
+      updatedAt,
+    })
+    .onConflictDoUpdate({
+      target: [sleepEntries.tenantId, sleepEntries.userId, sleepEntries.date],
+      set: {
         startTime: body.data.startTime,
         endTime: body.data.endTime,
-        hours: computeSleepHours(body.data.startTime, body.data.endTime),
-        quality: body.data.quality,
+        qualityRating: body.data.quality,
         updatedAt,
       },
-    },
-    201,
-  )
+    })
+
+  const [row] = await db
+    .select()
+    .from(sleepEntries)
+    .where(
+      and(eq(sleepEntries.tenantId, tenantId), eq(sleepEntries.userId, userId), eq(sleepEntries.date, body.data.date)),
+    )
+    .limit(1)
+
+  return c.json({ entry: toResponse(row!) })
 })
 
 export { route as sleepRoutes }

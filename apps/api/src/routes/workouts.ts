@@ -1,8 +1,9 @@
 import { Hono } from "hono"
-import { and, desc, eq, gte } from "drizzle-orm"
+import { and, desc, eq, gte, inArray } from "drizzle-orm"
 import { workoutLogs, workoutLogSets } from "db"
 import {
   StartWorkoutInputSchema,
+  SkipWorkoutInputSchema,
   LogWorkoutSetInputSchema,
   type WorkoutLog,
   type WorkoutLogSet,
@@ -72,7 +73,6 @@ route.post("/start", async (c) => {
   const now = Date.now()
   const id = crypto.randomUUID()
 
-  // Resume an in-progress session for the same day/dayIndex if one exists.
   const [existing] = await db
     .select()
     .from(workoutLogs)
@@ -124,6 +124,100 @@ route.post("/start", async (c) => {
         setsCompleted: 0,
         startedAt: now,
         completedAt: null,
+        updatedAt: now,
+      }),
+    },
+    201,
+  )
+})
+
+/** Skip today's routine day — advances cycle like a completion, no sets logged. */
+route.post("/skip", async (c) => {
+  const body = SkipWorkoutInputSchema.safeParse(await c.req.json())
+  if (!body.success) return c.json({ error: body.error.flatten() }, 400)
+
+  const { userId, tenantId } = c.get("auth")
+  const db = getDb(c.env.DB)
+  const now = Date.now()
+  const id = crypto.randomUUID()
+
+  // If there's an in-progress session for this slot, convert it to skipped (drop sets).
+  const [existing] = await db
+    .select()
+    .from(workoutLogs)
+    .where(
+      and(
+        eq(workoutLogs.userId, userId),
+        eq(workoutLogs.tenantId, tenantId),
+        eq(workoutLogs.date, body.data.date),
+        eq(workoutLogs.dayIndex, body.data.dayIndex),
+        inArray(workoutLogs.status, ["in_progress", "completed", "skipped"]),
+      ),
+    )
+    .limit(1)
+
+  if (existing?.status === "skipped") {
+    return c.json({ workout: toLog(existing) })
+  }
+  if (existing?.status === "completed") {
+    return c.json({ error: "Day already completed" }, 400)
+  }
+
+  if (existing?.status === "in_progress") {
+    await db.delete(workoutLogSets).where(eq(workoutLogSets.workoutLogId, existing.id))
+    await db
+      .update(workoutLogs)
+      .set({
+        status: "skipped",
+        setsCompleted: 0,
+        setsPlanned: 0,
+        completedAt: now,
+        updatedAt: now,
+        dayLabel: body.data.dayLabel,
+      })
+      .where(eq(workoutLogs.id, existing.id))
+    return c.json({
+      workout: toLog({
+        ...existing,
+        status: "skipped",
+        setsCompleted: 0,
+        setsPlanned: 0,
+        completedAt: now,
+        updatedAt: now,
+        dayLabel: body.data.dayLabel,
+      }),
+    })
+  }
+
+  await db.insert(workoutLogs).values({
+    id,
+    tenantId,
+    userId,
+    date: body.data.date,
+    dayLabel: body.data.dayLabel,
+    dayIndex: body.data.dayIndex,
+    status: "skipped",
+    setsPlanned: 0,
+    setsCompleted: 0,
+    startedAt: now,
+    completedAt: now,
+    updatedAt: now,
+  })
+
+  return c.json(
+    {
+      workout: toLog({
+        id,
+        tenantId,
+        userId,
+        date: body.data.date,
+        dayLabel: body.data.dayLabel,
+        dayIndex: body.data.dayIndex,
+        status: "skipped",
+        setsPlanned: 0,
+        setsCompleted: 0,
+        startedAt: now,
+        completedAt: now,
         updatedAt: now,
       }),
     },
@@ -208,6 +302,30 @@ route.post("/:id/finish", async (c) => {
   })
 })
 
+/** Current in-progress session — drives the resume mini-bar. */
+route.get("/in-progress", async (c) => {
+  const { userId, tenantId } = c.get("auth")
+  const db = getDb(c.env.DB)
+
+  const [row] = await db
+    .select()
+    .from(workoutLogs)
+    .where(
+      and(
+        eq(workoutLogs.userId, userId),
+        eq(workoutLogs.tenantId, tenantId),
+        eq(workoutLogs.status, "in_progress"),
+      ),
+    )
+    .orderBy(desc(workoutLogs.startedAt))
+    .limit(1)
+
+  if (!row) return c.json({ workout: null })
+
+  const sets = await db.select().from(workoutLogSets).where(eq(workoutLogSets.workoutLogId, row.id))
+  return c.json({ workout: toLog(row, sets.map(toSet)) })
+})
+
 route.get("/recent", async (c) => {
   const { userId, tenantId } = c.get("auth")
   const db = getDb(c.env.DB)
@@ -220,7 +338,7 @@ route.get("/recent", async (c) => {
       and(
         eq(workoutLogs.userId, userId),
         eq(workoutLogs.tenantId, tenantId),
-        eq(workoutLogs.status, "completed"),
+        inArray(workoutLogs.status, ["completed", "skipped"]),
       ),
     )
     .orderBy(desc(workoutLogs.completedAt))
@@ -230,7 +348,8 @@ route.get("/recent", async (c) => {
     id: row.id,
     dayLabel: row.dayLabel,
     date: row.date,
-    completionPct: completionPct(row.setsCompleted, row.setsPlanned),
+    status: row.status as "completed" | "skipped",
+    completionPct: row.status === "skipped" ? 0 : completionPct(row.setsCompleted, row.setsPlanned),
     sets: row.setsCompleted,
     setsPlanned: row.setsPlanned,
   }))
@@ -254,21 +373,20 @@ route.get("/adherence", async (c) => {
       and(
         eq(workoutLogs.userId, userId),
         eq(workoutLogs.tenantId, tenantId),
-        eq(workoutLogs.status, "completed"),
+        inArray(workoutLogs.status, ["completed", "skipped"]),
         gte(workoutLogs.date, sinceStr),
       ),
     )
 
-  const byWeek = new Map<string, { planned: number; completed: number }>()
+  const byWeek = new Map<string, { completed: number; skipped: number }>()
   for (const row of rows) {
     const key = weekStartMonday(row.date)
-    const agg = byWeek.get(key) ?? { planned: 0, completed: 0 }
-    agg.planned += row.setsPlanned
-    agg.completed += row.setsCompleted
+    const agg = byWeek.get(key) ?? { completed: 0, skipped: 0 }
+    if (row.status === "skipped") agg.skipped += 1
+    else agg.completed += 1
     byWeek.set(key, agg)
   }
 
-  // Build a contiguous 12-week series ending this week (empty weeks = 0%).
   const history: AdherenceWeek[] = []
   const thisMonday = weekStartMonday(todayIso())
   for (let i = weeks - 1; i >= 0; i--) {
@@ -276,17 +394,25 @@ route.get("/adherence", async (c) => {
     d.setUTCDate(d.getUTCDate() - i * 7)
     const date = d.toISOString().slice(0, 10)
     const agg = byWeek.get(date)
+    const sessionsCompleted = agg?.completed ?? 0
+    const sessionsSkipped = agg?.skipped ?? 0
+    const sessionsPlanned = sessionsCompleted + sessionsSkipped
     history.push({
       weekLabel: `Wk ${weeks - i}`,
       date,
-      completionPct: agg ? completionPct(agg.completed, agg.planned) : 0,
+      sessionsPlanned,
+      sessionsCompleted,
+      sessionsSkipped,
+      // null = no-data yet for that week (not the same as 0% from all skips)
+      completionPct:
+        sessionsPlanned === 0 ? null : Math.round((sessionsCompleted / sessionsPlanned) * 100),
     })
   }
 
   return c.json({ history })
 })
 
-/** Next routine day index: after the last completed session's dayIndex. */
+/** Next routine day index after last completed OR skipped session. */
 route.get("/cycle-step", async (c) => {
   const { userId, tenantId } = c.get("auth")
   const db = getDb(c.env.DB)
@@ -298,7 +424,7 @@ route.get("/cycle-step", async (c) => {
       and(
         eq(workoutLogs.userId, userId),
         eq(workoutLogs.tenantId, tenantId),
-        eq(workoutLogs.status, "completed"),
+        inArray(workoutLogs.status, ["completed", "skipped"]),
       ),
     )
     .orderBy(desc(workoutLogs.completedAt))
@@ -315,7 +441,6 @@ route.get("/cycle-step", async (c) => {
   })
 })
 
-/** Latest completed set per exercise — drives suggestNextWeight on the workout screen. */
 route.get("/last-performance", async (c) => {
   const { userId, tenantId } = c.get("auth")
   const db = getDb(c.env.DB)

@@ -1,32 +1,42 @@
 import * as React from "react"
-import { ChevronDown, ChevronUp, History, Plus, Trash2 } from "lucide-react"
+import { toast } from "sonner"
+import { ArrowDown, ArrowUp, Check, History, Moon, Pencil, Plus, Trash2 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { NumberStepper } from "@/components/shared/number-stepper"
-import { ExerciseThumb } from "@/components/shared/exercise-thumb"
-import { ExerciseMediaPlayer } from "@/components/shared/exercise-media-player"
+import { ExerciseMediaQuickView } from "@/components/shared/exercise-media-quick-view"
+import { AddExerciseSheet } from "@/components/shared/add-exercise-sheet"
 import {
-  describeDayFocus,
-  filterExercisesForDay,
+  activeDays,
+  normalizeRoutineDay,
   suggestNextWeight,
   type Equipment,
   type RoutineDay,
 } from "@/lib/stub-data"
 import { useExercises } from "@/hooks/use-exercises"
-import type { Exercise } from "shared"
+
+/** How long the "Undo" on a removed day stays offered before the archive is effectively final. */
+const UNDO_WINDOW_MS = 8000
 
 function parseLeadingInt(s: string, fallback: number) {
   const m = s.match(/\d+/)
   return m ? Number(m[0]) : fallback
 }
 
+/** Renumbers active days 0..n-1; archived days keep their old index so Undo restores in place. */
+function reindexActive(all: RoutineDay[]): RoutineDay[] {
+  const archived = all.filter((d) => d.archivedAt != null)
+  const active = activeDays(all).map((d, i) => normalizeRoutineDay({ ...d, orderIndex: i }, i))
+  return [...active, ...archived]
+}
+
 /**
- * Day-tabs + per-exercise editor. Add-exercise sheet filters by day focus (Push/Pull/Upper/…)
- * and shows animated previews on demand.
+ * Day-tabs + per-exercise editor, plus day management (rename, add training/rest day, reorder,
+ * archive with undo). Removal is a soft archive: archived days stay in the array so the parent
+ * saves them back and an undo can un-archive within the toast window.
  */
 export function RoutineDaysEditor({
   days,
@@ -34,14 +44,28 @@ export function RoutineDaysEditor({
   activeDay,
   onActiveDayChange,
   equipment = [],
+  /** Weekly mode: add/remove days. Rotating: day count is locked — reorder + edit only. */
+  allowDayMutations = true,
 }: {
   days: RoutineDay[]
   setDays: React.Dispatch<React.SetStateAction<RoutineDay[]>>
   activeDay: string
   onActiveDayChange: (id: string) => void
   equipment?: Equipment[]
+  allowDayMutations?: boolean
 }) {
   const { exercises, byId } = useExercises()
+  const [renamingId, setRenamingId] = React.useState<string | null>(null)
+  const [draftLabel, setDraftLabel] = React.useState("")
+
+  const visible = React.useMemo(() => activeDays(days), [days])
+
+  // The parent's activeDay can point at a day that was just archived (or at nothing at all on
+  // a freshly seeded routine) — keep the selection on something that actually renders.
+  React.useEffect(() => {
+    if (visible.length === 0) return
+    if (!visible.some((d) => d.id === activeDay)) onActiveDayChange(visible[0].id)
+  }, [visible, activeDay, onActiveDayChange])
 
   function updateExercise(
     dayId: string,
@@ -59,104 +83,345 @@ export function RoutineDaysEditor({
 
   function removeExercise(dayId: string, exerciseId: string) {
     setDays((prev) =>
-      prev.map((d) => (d.id !== dayId ? d : { ...d, exercises: d.exercises.filter((e) => e.exerciseId !== exerciseId) })),
+      prev.map((d) =>
+        d.id !== dayId
+          ? d
+          : {
+              ...d,
+              exercises: d.exercises
+                .filter((e) => e.exerciseId !== exerciseId)
+                .map((e, i) => ({ ...e, orderIndex: i })),
+            },
+      ),
     )
   }
 
   function addExercise(dayId: string, exerciseId: string) {
     setDays((prev) =>
       prev.map((d) => {
-        if (d.id !== dayId) return d
+        if (d.id !== dayId || d.dayType === "rest") return d
         if (d.exercises.some((e) => e.exerciseId === exerciseId)) return d
         return {
           ...d,
-          exercises: [...d.exercises, { exerciseId, targetSets: 3, targetReps: "10", targetWeightKg: 20 }],
+          exercises: [
+            ...d.exercises,
+            {
+              exerciseId,
+              targetSets: 3,
+              targetReps: "10",
+              targetWeightKg: 20,
+              orderIndex: d.exercises.length,
+            },
+          ],
         }
       }),
     )
   }
 
-  if (days.length === 0) return null
+  function addDay(dayType: "training" | "rest") {
+    const id = crypto.randomUUID()
+    setDays((prev) => {
+      const active = activeDays(prev)
+      const label =
+        dayType === "rest"
+          ? "Rest"
+          : `Day ${active.filter((d) => d.dayType !== "rest").length + 1}`
+      const last = active.length > 0 ? active[active.length - 1].orderIndex + 1 : 0
+      return reindexActive([
+        ...prev,
+        normalizeRoutineDay({ id, label, dayType, orderIndex: last, exercises: [] }, last),
+      ])
+    })
+    onActiveDayChange(id)
+  }
+
+  function renameDay(dayId: string, label: string) {
+    const trimmed = label.trim()
+    if (!trimmed) return
+    setDays((prev) => prev.map((d) => (d.id === dayId ? { ...d, label: trimmed } : d)))
+  }
+
+  function restoreDay(dayId: string) {
+    setDays((prev) => prev.map((d) => (d.id === dayId ? { ...d, archivedAt: null } : d)))
+    onActiveDayChange(dayId)
+  }
+
+  function removeDay(day: RoutineDay) {
+    const index = visible.findIndex((d) => d.id === day.id)
+    const neighbour = visible[index + 1] ?? visible[index - 1]
+    setDays((prev) => prev.map((d) => (d.id === day.id ? { ...d, archivedAt: Date.now() } : d)))
+    if (neighbour) onActiveDayChange(neighbour.id)
+    toast(`${day.label} removed`, {
+      duration: UNDO_WINDOW_MS,
+      action: { label: "Undo", onClick: () => restoreDay(day.id) },
+    })
+  }
+
+  function moveDay(dayId: string, direction: -1 | 1) {
+    setDays((prev) => {
+      const active = activeDays(prev)
+      const index = active.findIndex((d) => d.id === dayId)
+      const target = index + direction
+      if (index === -1 || target < 0 || target >= active.length) return prev
+      const reordered = active.slice()
+      ;[reordered[index], reordered[target]] = [reordered[target], reordered[index]]
+      const archived = prev.filter((d) => d.archivedAt != null)
+      // Renumber before returning: sorting by the stale orderIndex would undo the swap.
+      return [...reordered.map((d, i) => normalizeRoutineDay({ ...d, orderIndex: i }, i)), ...archived]
+    })
+  }
+
+  function moveExercise(dayId: string, exerciseId: string, direction: -1 | 1) {
+    setDays((prev) =>
+      prev.map((d) => {
+        if (d.id !== dayId) return d
+        const sorted = d.exercises
+          .slice()
+          .sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
+        const index = sorted.findIndex((e) => e.exerciseId === exerciseId)
+        const target = index + direction
+        if (index === -1 || target < 0 || target >= sorted.length) return d
+        const next = sorted.slice()
+        ;[next[index], next[target]] = [next[target], next[index]]
+        return {
+          ...d,
+          exercises: next.map((e, i) => ({ ...e, orderIndex: i })),
+        }
+      }),
+    )
+  }
+
+  function startRename(day: RoutineDay) {
+    setRenamingId(day.id)
+    setDraftLabel(day.label)
+  }
+
+  function commitRename() {
+    if (renamingId) renameDay(renamingId, draftLabel)
+    setRenamingId(null)
+  }
+
+  const toolbar = allowDayMutations ? (
+    <div className="flex gap-2">
+      <Button variant="outline" className="h-9 flex-1 text-xs" onClick={() => addDay("training")}>
+        <Plus className="size-3.5" /> Add training day
+      </Button>
+      <Button variant="outline" className="h-9 flex-1 text-xs" onClick={() => addDay("rest")}>
+        <Moon className="size-3.5" /> Add rest day
+      </Button>
+    </div>
+  ) : (
+    <p className="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+      Rotating cycle locks the day count to your N-on / M-off pattern — reorder days or edit
+      exercises, but add/remove is disabled here.
+    </p>
+  )
+
+  if (visible.length === 0) {
+    return (
+      <div className="space-y-3">
+        <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+          No days yet — add a training or rest day to start building the split.
+        </p>
+        {toolbar}
+      </div>
+    )
+  }
 
   return (
-    <Tabs value={activeDay} onValueChange={onActiveDayChange}>
-      <TabsList className="w-full">
-        {days.map((d) => (
-          <TabsTrigger key={d.id} value={d.id} className="h-full text-sm">
-            {d.label}
-          </TabsTrigger>
-        ))}
-      </TabsList>
+    <div className="space-y-3">
+      <Tabs value={activeDay} onValueChange={onActiveDayChange}>
+        <TabsList className="w-full">
+          {visible.map((d) => (
+            <TabsTrigger key={d.id} value={d.id} className="h-full text-sm">
+              {d.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
 
-      {days.map((day) => (
-        <TabsContent key={day.id} value={day.id} className="mt-4 space-y-3">
-          {day.exercises.map((re) => {
-            const ex = byId(re.exerciseId)
-            if (!ex) return null
-            const suggested = suggestNextWeight(re)
-            return (
-              <Card key={re.exerciseId} className="py-3">
-                <CardContent className="space-y-3 px-3.5">
-                  <div className="flex items-start gap-3">
-                    <ExerciseThumb hasGif={ex.hasGif} exerciseId={ex.id} className="w-14 shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-sm font-medium leading-tight">{ex.name}</p>
-                        <button
-                          aria-label={`Remove ${ex.name}`}
-                          onClick={() => removeExercise(day.id, re.exerciseId)}
-                          className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                        >
-                          <Trash2 className="size-4" />
-                        </button>
-                      </div>
-                      {re.lastPerformance && (
-                        <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                          <History className="size-3" />
-                          Last time: {re.lastPerformance.reps} × {re.lastPerformance.weightKg}kg
-                          {suggested !== re.lastPerformance.weightKg && (
-                            <span className="font-medium text-success">→ {suggested}kg suggested</span>
-                          )}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <StepperField
-                      label="Sets"
-                      value={re.targetSets}
-                      onChange={(v) => updateExercise(day.id, re.exerciseId, { targetSets: v })}
-                      min={1}
-                    />
-                    <StepperField
-                      label="Reps"
-                      value={parseLeadingInt(re.targetReps, 10)}
-                      onChange={(v) => updateExercise(day.id, re.exerciseId, { targetReps: String(v) })}
-                      min={1}
-                    />
-                    <StepperField
-                      label="Weight"
-                      value={re.targetWeightKg ?? 0}
-                      onChange={(v) => updateExercise(day.id, re.exerciseId, { targetWeightKg: v })}
-                      step={2.5}
-                      suffix="kg"
-                    />
-                  </div>
+        {visible.map((day, index) => (
+          <TabsContent key={day.id} value={day.id} className="mt-4 space-y-3">
+            <div className="flex items-center gap-1.5">
+              {renamingId === day.id ? (
+                <>
+                  <Input
+                    autoFocus
+                    value={draftLabel}
+                    onChange={(e) => setDraftLabel(e.target.value)}
+                    onBlur={commitRename}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") commitRename()
+                      if (e.key === "Escape") setRenamingId(null)
+                    }}
+                    aria-label="Day name"
+                    className="h-9 flex-1 text-sm"
+                  />
+                  <Button variant="ghost" size="icon" className="size-9" onClick={commitRename} aria-label="Save day name">
+                    <Check className="size-4" />
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => startRename(day)}
+                    className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md py-1 text-left text-sm font-medium hover:text-primary"
+                  >
+                    <span className="truncate">{day.label}</span>
+                    {day.dayType === "rest" ? (
+                      <Badge variant="secondary" className="text-[10px]">
+                        Rest
+                      </Badge>
+                    ) : null}
+                    <Pencil className="size-3.5 shrink-0 text-muted-foreground" />
+                  </button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-9"
+                    disabled={index === 0}
+                    onClick={() => moveDay(day.id, -1)}
+                    aria-label={`Move ${day.label} earlier`}
+                  >
+                    <ArrowUp className="size-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-9"
+                    disabled={index === visible.length - 1}
+                    onClick={() => moveDay(day.id, 1)}
+                    aria-label={`Move ${day.label} later`}
+                  >
+                    <ArrowDown className="size-4" />
+                  </Button>
+                  {allowDayMutations ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-9 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => removeDay(day)}
+                      aria-label={`Remove ${day.label}`}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  ) : null}
+                </>
+              )}
+            </div>
+
+            {day.dayType === "rest" ? (
+              <Card className="border-dashed py-6">
+                <CardContent className="flex flex-col items-center gap-1.5 text-center">
+                  <Moon className="size-5 text-muted-foreground" />
+                  <p className="text-sm font-medium">Rest day — no exercises</p>
+                  <p className="text-xs text-muted-foreground">
+                    Counts as a slot in the cycle, so the split keeps its rhythm.
+                  </p>
                 </CardContent>
               </Card>
-            )
-          })}
+            ) : (
+              <>
+                {day.exercises
+                  .slice()
+                  .sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
+                  .map((re, exIndex, sorted) => {
+                  const ex = byId(re.exerciseId)
+                  if (!ex) return null
+                  const suggested = suggestNextWeight(re)
+                  return (
+                    <Card key={re.exerciseId} className="py-3">
+                      <CardContent className="space-y-3 px-3.5">
+                        <div className="flex items-start gap-3">
+                          <ExerciseMediaQuickView
+                            exercise={ex}
+                            className="w-20 shrink-0"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-sm font-medium leading-tight">{ex.name}</p>
+                              <div className="flex shrink-0 items-center gap-0.5">
+                                <button
+                                  type="button"
+                                  aria-label={`Move ${ex.name} up`}
+                                  disabled={exIndex === 0}
+                                  onClick={() => moveExercise(day.id, re.exerciseId, -1)}
+                                  className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted disabled:opacity-30"
+                                >
+                                  <ArrowUp className="size-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label={`Move ${ex.name} down`}
+                                  disabled={exIndex === sorted.length - 1}
+                                  onClick={() => moveExercise(day.id, re.exerciseId, 1)}
+                                  className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted disabled:opacity-30"
+                                >
+                                  <ArrowDown className="size-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label={`Remove ${ex.name}`}
+                                  onClick={() => removeExercise(day.id, re.exerciseId)}
+                                  className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                >
+                                  <Trash2 className="size-4" />
+                                </button>
+                              </div>
+                            </div>
+                            {re.lastPerformance && (
+                              <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                                <History className="size-3" />
+                                Last time: {re.lastPerformance.reps} × {re.lastPerformance.weightKg}kg
+                                {suggested !== re.lastPerformance.weightKg && (
+                                  <span className="font-medium text-success">→ {suggested}kg suggested</span>
+                                )}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <StepperField
+                            label="Sets"
+                            value={re.targetSets}
+                            onChange={(v) => updateExercise(day.id, re.exerciseId, { targetSets: v })}
+                            min={1}
+                          />
+                          <StepperField
+                            label="Reps"
+                            value={parseLeadingInt(re.targetReps, 10)}
+                            onChange={(v) => updateExercise(day.id, re.exerciseId, { targetReps: String(v) })}
+                            min={1}
+                          />
+                          <StepperField
+                            label="Weight"
+                            value={re.targetWeightKg ?? 0}
+                            onChange={(v) => updateExercise(day.id, re.exerciseId, { targetWeightKg: v })}
+                            step={2.5}
+                            suffix="kg"
+                          />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )
+                })}
 
-          <AddExerciseSheet
-            dayLabel={day.label}
-            exercises={exercises ?? []}
-            equipment={equipment}
-            excludeIds={day.exercises.map((e) => e.exerciseId)}
-            onAdd={(id) => addExercise(day.id, id)}
-          />
-        </TabsContent>
-      ))}
-    </Tabs>
+                <AddExerciseSheet
+                  mode="pick-exercise"
+                  dayLabel={day.label}
+                  exercises={exercises ?? []}
+                  equipment={equipment}
+                  excludeIds={day.exercises.map((e) => e.exerciseId)}
+                  onAdd={(id) => addExercise(day.id, id)}
+                />
+              </>
+            )}
+          </TabsContent>
+        ))}
+      </Tabs>
+
+      {toolbar}
+    </div>
   )
 }
 
@@ -179,198 +444,6 @@ function StepperField({
     <div className="flex flex-1 flex-col items-center gap-1">
       <span className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">{label}</span>
       <NumberStepper value={value} onChange={onChange} min={min} step={step} suffix={suffix} size="compact" />
-    </div>
-  )
-}
-
-function AddExerciseSheet({
-  dayLabel,
-  onAdd,
-  exercises,
-  equipment,
-  excludeIds,
-}: {
-  dayLabel: string
-  onAdd: (exerciseId: string) => void
-  exercises: Exercise[]
-  equipment: Equipment[]
-  excludeIds: string[]
-}) {
-  const [query, setQuery] = React.useState("")
-  const [open, setOpen] = React.useState(false)
-  const [showAll, setShowAll] = React.useState(false)
-  const [previewId, setPreviewId] = React.useState<string | null>(null)
-
-  React.useEffect(() => {
-    if (!open) {
-      setQuery("")
-      setShowAll(false)
-      setPreviewId(null)
-    }
-  }, [open])
-
-  const { recommended, all } = filterExercisesForDay(exercises, dayLabel, { equipment, excludeIds })
-  const q = query.trim().toLowerCase()
-
-  function matchesSearch(ex: Exercise) {
-    return !q || ex.name.toLowerCase().includes(q)
-  }
-
-  const recommendedFiltered = recommended.filter(matchesSearch)
-  const allFiltered = all.filter(matchesSearch)
-  const otherFiltered = allFiltered.filter((ex) => !recommended.some((r) => r.id === ex.id))
-  const focusLabel = describeDayFocus(dayLabel)
-
-  function pick(id: string) {
-    onAdd(id)
-    setOpen(false)
-  }
-
-  return (
-    <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger
-        render={
-          <Button variant="outline" className="h-11 w-full border-dashed text-sm">
-            <Plus className="size-4" /> Add exercise
-          </Button>
-        }
-      />
-      <SheetContent side="bottom" className="max-h-[90vh] overflow-y-auto rounded-t-2xl">
-        <SheetHeader>
-          <SheetTitle>Add to {dayLabel}</SheetTitle>
-          <p className="text-left text-xs text-muted-foreground">
-            Showing exercises for <span className="font-medium text-foreground">{focusLabel}</span>
-            {equipment.length > 0 ? " · matching your equipment" : ""}
-          </p>
-        </SheetHeader>
-        <div className="space-y-3 px-4 pb-4">
-          <Input
-            autoFocus
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search exercises…"
-            className="h-11 text-base"
-          />
-
-          {recommendedFiltered.length > 0 ? (
-            <ExercisePickerSection
-              title={`Recommended (${recommendedFiltered.length})`}
-              items={recommendedFiltered}
-              previewId={previewId}
-              onPreview={setPreviewId}
-              onAdd={pick}
-            />
-          ) : (
-            <p className="py-4 text-center text-sm text-muted-foreground">
-              No matching exercises for this day{q ? " with that search" : ""}.
-            </p>
-          )}
-
-          {otherFiltered.length > 0 ? (
-            <div className="space-y-2 border-t border-border pt-3">
-              <Button
-                type="button"
-                variant="ghost"
-                className="h-9 w-full justify-between px-2 text-sm text-muted-foreground"
-                onClick={() => setShowAll((v) => !v)}
-              >
-                {showAll ? "Hide all exercises" : `Show all exercises (${otherFiltered.length} more)`}
-                {showAll ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
-              </Button>
-              {showAll ? (
-                <ExercisePickerSection
-                  title="All exercises"
-                  items={otherFiltered}
-                  previewId={previewId}
-                  onPreview={setPreviewId}
-                  onAdd={pick}
-                />
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      </SheetContent>
-    </Sheet>
-  )
-}
-
-function ExercisePickerSection({
-  title,
-  items,
-  previewId,
-  onPreview,
-  onAdd,
-}: {
-  title: string
-  items: Exercise[]
-  previewId: string | null
-  onPreview: (id: string | null) => void
-  onAdd: (id: string) => void
-}) {
-  return (
-    <div className="space-y-1">
-      <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{title}</p>
-      {items.map((ex) => (
-        <ExercisePickerRow
-          key={ex.id}
-          exercise={ex}
-          expanded={previewId === ex.id}
-          onTogglePreview={() => onPreview(previewId === ex.id ? null : ex.id)}
-          onAdd={() => onAdd(ex.id)}
-        />
-      ))}
-    </div>
-  )
-}
-
-function ExercisePickerRow({
-  exercise,
-  expanded,
-  onTogglePreview,
-  onAdd,
-}: {
-  exercise: Exercise
-  expanded: boolean
-  onTogglePreview: () => void
-  onAdd: () => void
-}) {
-  return (
-    <div className="rounded-lg border border-transparent hover:border-border">
-      <div className="flex items-center gap-2 p-1.5">
-        <button
-          type="button"
-          aria-label={`Preview ${exercise.name}`}
-          onClick={onTogglePreview}
-          className="shrink-0 rounded-md ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-        >
-          <ExerciseThumb hasGif={exercise.hasGif} exerciseId={exercise.id} className="w-14" />
-        </button>
-        <button
-          type="button"
-          onClick={onAdd}
-          className="min-w-0 flex-1 py-1 text-left text-sm leading-snug hover:underline"
-        >
-          {exercise.name}
-        </button>
-        <div className="flex shrink-0 items-center gap-1">
-          {expanded ? (
-            <Badge variant="secondary" className="text-[10px]">
-              Preview
-            </Badge>
-          ) : null}
-          <Button type="button" variant="ghost" size="icon" className="size-8" onClick={onAdd} aria-label={`Add ${exercise.name}`}>
-            <Plus className="size-4" />
-          </Button>
-        </div>
-      </div>
-      {expanded ? (
-        <div className="border-t border-border px-2 pb-2 pt-1">
-          <ExerciseMediaPlayer exerciseId={exercise.id} hasGif={exercise.hasGif} />
-          <Button type="button" className="mt-2 h-10 w-full" onClick={onAdd}>
-            Add {exercise.name}
-          </Button>
-        </div>
-      ) : null}
     </div>
   )
 }

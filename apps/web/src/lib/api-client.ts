@@ -49,6 +49,7 @@ import {
   AdherenceWeekSchema,
   LastPerformanceSchema,
   StartWorkoutInputSchema,
+  SkipWorkoutInputSchema,
   LogWorkoutSetInputSchema,
   ExerciseSchema,
   AiProviderConfigSchema,
@@ -57,11 +58,15 @@ import {
   GenerateRoutineResponseSchema,
   SessionListItemSchema,
   ChangePasswordInputSchema,
+  ThemePreferenceSchema,
+  UpsertThemePreferenceInputSchema,
   type StartWorkoutInput,
+  type SkipWorkoutInput,
   type LogWorkoutSetInput,
   type UpsertAiProviderInput,
   type GenerateRoutineInput,
   type ChangePasswordInput,
+  type UpsertThemePreferenceInput,
   type Exercise,
 } from "shared"
 
@@ -228,6 +233,10 @@ export function getMacrosForDate(date?: string): Promise<{ entry: MacroEntry | n
   return request(`/macros${date ? `?date=${date}` : ""}`, { method: "GET" }, z.object({ entry: MacroEntrySchema.nullable() }))
 }
 
+export function getMacrosHistory(): Promise<{ entries: MacroEntry[] }> {
+  return request("/macros/history", { method: "GET" }, z.object({ entries: z.array(MacroEntrySchema) }))
+}
+
 export function upsertMacros(input: UpsertMacroEntryInput): Promise<{ entry: MacroEntry }> {
   UpsertMacroEntryInputSchema.parse(input)
   return request("/macros", { method: "PUT", body: JSON.stringify(input) }, z.object({ entry: MacroEntrySchema }))
@@ -270,6 +279,15 @@ export function logWorkoutSet(workoutId: string, input: LogWorkoutSetInput) {
 
 export function finishWorkout(workoutId: string) {
   return request(`/workouts/${workoutId}/finish`, { method: "POST" }, z.object({ workout: WorkoutLogSchema }))
+}
+
+export function skipWorkout(input: SkipWorkoutInput) {
+  SkipWorkoutInputSchema.parse(input)
+  return request("/workouts/skip", { method: "POST", body: JSON.stringify(input) }, z.object({ workout: WorkoutLogSchema }))
+}
+
+export function getInProgressWorkout() {
+  return request("/workouts/in-progress", { method: "GET" }, z.object({ workout: WorkoutLogSchema.nullable() }))
 }
 
 export function getRecentWorkouts(limit = 10) {
@@ -346,6 +364,25 @@ export function saveAiConfig(input: UpsertAiProviderInput) {
   return request("/ai/config", { method: "PUT", body: JSON.stringify(input) }, AiProviderConfigSchema)
 }
 
+export function listAiModels() {
+  return request(
+    "/ai/models",
+    { method: "GET" },
+    z.object({
+      refreshedAt: z.number().nullable(),
+      models: z.array(
+        z.object({
+          id: z.string(),
+          name: z.string().optional(),
+          isFree: z.boolean(),
+          supportsVision: z.boolean(),
+          supportsTools: z.boolean(),
+        }),
+      ),
+    }),
+  )
+}
+
 export function testAiConfig() {
   return request("/ai/test", { method: "POST" }, z.object({ ok: z.boolean(), reason: z.string().optional() }))
 }
@@ -360,4 +397,21 @@ export function detectEquipment(imageBase64?: string) {
 
 export function generateRoutineAi(input: GenerateRoutineInput) {
   return request("/ai/generate-routine", { method: "POST", body: JSON.stringify(input) }, GenerateRoutineResponseSchema)
+}
+
+// --- theme (D1 source of truth; localStorage is instant-paint cache only) ---
+export function getThemePreference() {
+  return request("/theme", { method: "GET" }, z.object({ theme: ThemePreferenceSchema }))
+}
+
+export function saveThemePreference(
+  input: UpsertThemePreferenceInput,
+  opts?: { signal?: AbortSignal },
+) {
+  UpsertThemePreferenceInputSchema.parse(input)
+  return request(
+    "/theme",
+    { method: "PUT", body: JSON.stringify(input), signal: opts?.signal },
+    z.object({ theme: ThemePreferenceSchema }),
+  )
 }

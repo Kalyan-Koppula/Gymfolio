@@ -1,6 +1,7 @@
 import { Routes, Route } from "react-router-dom"
 import { AppShell } from "@/components/nav/app-shell"
 import { RequireAuth } from "@/components/nav/require-auth"
+import { RequireOnboarding } from "@/components/nav/require-onboarding"
 import { RootRedirect } from "@/components/nav/root-redirect"
 
 import { Onboarding } from "@/screens/onboarding"
@@ -26,7 +27,9 @@ function App() {
   return (
     <Routes>
       <Route path="/" element={<RootRedirect />} />
-      <Route path="/onboarding" element={<Onboarding />} />
+      <Route element={<RequireOnboarding />}>
+        <Route path="/onboarding" element={<Onboarding />} />
+      </Route>
       <Route path="/login" element={<Login />} />
       <Route path="/join/:token" element={<Join />} />
 

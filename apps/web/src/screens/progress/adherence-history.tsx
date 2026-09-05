@@ -11,7 +11,8 @@ import { getAdherenceHistory, getRecentWorkouts } from "@/lib/api-client"
 import type { AdherenceWeek, WorkoutSessionSummary } from "shared"
 
 const chartConfig = {
-  completionPct: { label: "Completion", color: "var(--chart-1)" },
+  completionPct: { label: "Adherence", color: "var(--chart-1)" },
+  noData: { label: "No data", color: "var(--muted)" },
 } satisfies ChartConfig
 
 export function AdherenceHistory() {
@@ -33,22 +34,36 @@ export function AdherenceHistory() {
       })
   }, [])
 
+  // Weeks with nothing scheduled yet are no-data, not 0% — averaging them in would read as
+  // missed training the user never actually planned.
+  const resolved = history?.filter((w) => w.completionPct != null) ?? []
   const avg =
-    history && history.length > 0
-      ? Math.round(history.reduce((n, w) => n + w.completionPct, 0) / history.length)
+    resolved.length > 0
+      ? Math.round(resolved.reduce((n, w) => n + (w.completionPct ?? 0), 0) / resolved.length)
       : null
+
+  // Stacked behind the real bar so a no-data week still occupies its column as a muted block
+  // rather than vanishing into an unexplained gap.
+  const chartData = history?.map((w) => ({ ...w, noData: w.completionPct == null ? 100 : 0 })) ?? []
+  const totalSkipped = history?.reduce((n, w) => n + w.sessionsSkipped, 0) ?? 0
 
   return (
     <div>
       <TopBar title="Adherence & history" />
       <div className="space-y-5 px-4 py-4">
         <div>
-          {avg == null ? (
+          {history == null ? (
             <Skeleton className="h-9 w-24" />
+          ) : avg == null ? (
+            <p className="font-heading text-3xl font-semibold tracking-tight text-muted-foreground">No data</p>
           ) : (
             <p className="font-heading text-3xl font-semibold tracking-tight">{avg}%</p>
           )}
-          <p className="text-sm text-muted-foreground">Average completion — last 12 weeks</p>
+          <p className="text-sm text-muted-foreground">
+            {avg == null
+              ? "Finish or skip a session and adherence starts tracking"
+              : `Average adherence — last 12 weeks · ${totalSkipped} skipped`}
+          </p>
         </div>
 
         <Card>
@@ -57,14 +72,37 @@ export function AdherenceHistory() {
               <Skeleton className="h-48 w-full" />
             ) : (
               <ChartContainer config={chartConfig} className="h-48 w-full">
-                <BarChart data={history} margin={{ left: -20, right: 8, top: 8 }}>
+                <BarChart data={chartData} margin={{ left: -20, right: 8, top: 8 }}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" />
                   <XAxis dataKey="weekLabel" tickLine={false} axisLine={false} tickMargin={8} />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="completionPct" fill="var(--color-completionPct)" radius={4} />
+                  <ChartTooltip
+                    content={
+                      <ChartTooltipContent
+                        formatter={(value, name, _item, _index, raw) => {
+                          if (name === "noData") return null
+                          const week = raw as unknown as AdherenceWeek
+                          return (
+                            <div className="flex flex-col gap-0.5">
+                              <span className="font-medium text-foreground">
+                                {value == null ? "No sessions this week" : `${value}% adherence`}
+                              </span>
+                              <span className="text-muted-foreground">
+                                {week.sessionsCompleted} completed · {week.sessionsSkipped} skipped
+                              </span>
+                            </div>
+                          )
+                        }}
+                      />
+                    }
+                  />
+                  <Bar dataKey="noData" stackId="week" fill="var(--color-noData)" radius={4} tooltipType="none" />
+                  <Bar dataKey="completionPct" stackId="week" fill="var(--color-completionPct)" radius={4} />
                 </BarChart>
               </ChartContainer>
             )}
+            <p className="mt-2 text-xs text-muted-foreground">
+              Skipped sessions count against adherence. Muted columns are weeks with nothing logged.
+            </p>
           </CardContent>
         </Card>
 
@@ -76,7 +114,7 @@ export function AdherenceHistory() {
                 <Skeleton className="h-24 w-full" />
               </div>
             ) : sessions.length === 0 ? (
-              <p className="p-4 text-sm text-muted-foreground">No completed sessions yet.</p>
+              <p className="p-4 text-sm text-muted-foreground">No sessions yet.</p>
             ) : (
               <Table>
                 <TableHeader>
@@ -84,7 +122,7 @@ export function AdherenceHistory() {
                     <TableHead>Day</TableHead>
                     <TableHead>Date</TableHead>
                     <TableHead className="text-right">Sets</TableHead>
-                    <TableHead className="text-right">Completion</TableHead>
+                    <TableHead className="text-right">Result</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -93,12 +131,20 @@ export function AdherenceHistory() {
                       <TableCell className="font-medium">{s.dayLabel}</TableCell>
                       <TableCell className="text-muted-foreground">{s.date}</TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {s.sets}/{s.setsPlanned}
+                        {s.status === "skipped" ? "—" : `${s.sets}/${s.setsPlanned}`}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Badge variant={s.completionPct >= 90 ? "default" : s.completionPct >= 75 ? "secondary" : "destructive"}>
-                          {s.completionPct}%
-                        </Badge>
+                        {s.status === "skipped" ? (
+                          <Badge variant="outline">Skipped</Badge>
+                        ) : (
+                          <Badge
+                            variant={
+                              s.completionPct >= 90 ? "default" : s.completionPct >= 75 ? "secondary" : "destructive"
+                            }
+                          >
+                            {s.completionPct}%
+                          </Badge>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}

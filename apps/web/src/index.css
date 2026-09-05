@@ -7,8 +7,9 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-    --font-heading: var(--font-sans);
-    --font-sans: 'Geist Variable', sans-serif;
+    /* Point theme tokens at overridable custom props so font pairings can swap at runtime. */
+    --font-heading: var(--font-heading-family);
+    --font-sans: var(--font-sans-family);
     --color-success: var(--success);
     --color-success-foreground: var(--success-foreground);
     --color-warning: var(--warning);
@@ -360,9 +361,15 @@
     --chart-5: oklch(0.5 0.03 258);
 }
 
+/* Default font families — swapped via data-font-pairing without fighting @theme tokens */
+:root {
+  --font-sans-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-heading-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+}
+
 /* Font pairing: optional serif display heading (Fraunces) layered over Geist body text */
-[data-font-pairing="serif"] {
-    --font-heading: 'Fraunces Variable', ui-serif, Georgia, serif;
+html[data-font-pairing="serif"] {
+  --font-heading-family: "Fraunces Variable", ui-serif, Georgia, serif;
 }
 
 .dark {

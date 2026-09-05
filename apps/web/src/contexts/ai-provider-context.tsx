@@ -1,5 +1,5 @@
 import * as React from "react"
-import type { AiProviderId } from "shared"
+import { DEFAULT_OPENROUTER_MODEL, type AiProviderId } from "shared"
 import { getAiConfig } from "@/lib/api-client"
 
 /**
@@ -12,6 +12,10 @@ type AiProviderState = {
   setConfigured: (v: boolean) => void
   provider: AiProviderId
   setProvider: (p: AiProviderId) => void
+  modelSlug: string
+  setModelSlug: (s: string) => void
+  endpointOverride: string
+  setEndpointOverride: (s: string) => void
   refresh: () => Promise<void>
   loading: boolean
 }
@@ -20,7 +24,9 @@ const AiProviderContext = React.createContext<AiProviderState | null>(null)
 
 export function AiProviderProvider({ children }: { children: React.ReactNode }) {
   const [configured, setConfigured] = React.useState(false)
-  const [provider, setProvider] = React.useState<AiProviderId>("anthropic")
+  const [provider, setProvider] = React.useState<AiProviderId>("openrouter")
+  const [modelSlug, setModelSlug] = React.useState(DEFAULT_OPENROUTER_MODEL)
+  const [endpointOverride, setEndpointOverride] = React.useState("")
   const [loading, setLoading] = React.useState(true)
 
   const refresh = React.useCallback(async () => {
@@ -28,6 +34,9 @@ export function AiProviderProvider({ children }: { children: React.ReactNode }) 
       const cfg = await getAiConfig()
       setConfigured(cfg.configured)
       if (cfg.provider) setProvider(cfg.provider)
+      if (cfg.modelSlug) setModelSlug(cfg.modelSlug)
+      else if (cfg.provider === "openrouter") setModelSlug(DEFAULT_OPENROUTER_MODEL)
+      setEndpointOverride(cfg.endpointOverride ?? "")
     } catch {
       // Unauthenticated screens (login) may hit this — leave defaults.
     } finally {
@@ -40,8 +49,19 @@ export function AiProviderProvider({ children }: { children: React.ReactNode }) 
   }, [refresh])
 
   const value = React.useMemo(
-    () => ({ configured, setConfigured, provider, setProvider, refresh, loading }),
-    [configured, provider, refresh, loading],
+    () => ({
+      configured,
+      setConfigured,
+      provider,
+      setProvider,
+      modelSlug,
+      setModelSlug,
+      endpointOverride,
+      setEndpointOverride,
+      refresh,
+      loading,
+    }),
+    [configured, provider, modelSlug, endpointOverride, refresh, loading],
   )
 
   return <AiProviderContext.Provider value={value}>{children}</AiProviderContext.Provider>

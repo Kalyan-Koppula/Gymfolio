@@ -1,7 +1,7 @@
 import * as React from "react"
 import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
-import { ListChecks, Loader2, MoreVertical, Repeat, Sparkles } from "lucide-react"
+import { ListChecks, Loader2, MoreVertical, Repeat, RotateCcw, Sparkles } from "lucide-react"
 import { TopBar } from "@/components/nav/top-bar"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -21,11 +21,24 @@ import { SaveButton } from "@/components/shared/save-button"
 import { AiDegradedAlert } from "@/components/shared/ai-degraded-alert"
 import { EmptyState } from "@/components/shared/empty-state"
 import { RoutineDaysEditor } from "@/components/shared/routine-days-editor"
+import { SplitPicker } from "@/components/routine/split-picker"
 import { useApiWrite } from "@/hooks/use-api-write"
 import { useAiProvider } from "@/contexts/ai-provider-context"
 import { getRoutine, getSettings, saveRoutine, generateRoutineAi } from "@/lib/api-client"
 import { fetchExercises } from "@/hooks/use-exercises"
-import { SPLIT_PRESETS, autofillDayExercises, describeSchedule, splitPreset, type Equipment, type RoutineDay, type SplitType } from "@/lib/stub-data"
+import {
+  SPLIT_PRESETS,
+  activeDays,
+  applySplitInPlace,
+  autofillDayExercises,
+  describeSchedule,
+  normalizeRoutineDay,
+  splitPreset,
+  toSaveRoutineDays,
+  type Equipment,
+  type RoutineDay,
+  type SplitType,
+} from "@/lib/stub-data"
 import type { Routine } from "shared"
 
 export function RoutineBuilder() {
@@ -41,6 +54,8 @@ export function RoutineBuilder() {
   // "ai" only for a generation that happened in this session.
   const [createdVia, setCreatedVia] = React.useState<"ai" | "manual">("manual")
 
+  const [splitDialogOpen, setSplitDialogOpen] = React.useState(false)
+  const [pendingSplit, setPendingSplit] = React.useState<SplitType | null>(null)
   const [aiDialogOpen, setAiDialogOpen] = React.useState(false)
   const [aiSplitType, setAiSplitType] = React.useState<SplitType | "ai_choice">("ai_choice")
   const [generating, setGenerating] = React.useState(false)
@@ -52,8 +67,9 @@ export function RoutineBuilder() {
       .then((res) => {
         setRoutine(res.routine)
         if (res.routine) {
+          // Archived days stay in state so they're saved back (and stay undo-able).
           setDays(res.routine.days)
-          setActiveDay(res.routine.days[0]?.id ?? "")
+          setActiveDay(activeDays(res.routine.days)[0]?.id ?? "")
         }
       })
       .catch(() => {
@@ -88,22 +104,28 @@ export function RoutineBuilder() {
       let generated: RoutineDay[]
       if (ai.degraded || !ai.days) {
         toast.message(ai.reason ?? "AI unavailable — using equipment-based fill")
-        generated = preset.dayLabels.map((label, i) => ({
-          id: `generated-day-${i + 1}`,
-          label,
-          exercises: autofillDayExercises(label, equipment, pool),
-        }))
+        generated = preset.dayLabels.map((label, i) =>
+          normalizeRoutineDay(
+            { id: `generated-day-${i + 1}`, label, exercises: autofillDayExercises(label, equipment, pool) },
+            i,
+          ),
+        )
       } else {
-        generated = ai.days.map((d, i) => ({
-          id: `generated-day-${i + 1}`,
-          label: d.label,
-          exercises: d.exerciseIds.map((exerciseId) => ({
-            exerciseId,
-            targetSets: 3,
-            targetReps: "8-12",
-            targetWeightKg: 20,
-          })),
-        }))
+        generated = ai.days.map((d, i) =>
+          normalizeRoutineDay(
+            {
+              id: `generated-day-${i + 1}`,
+              label: d.label,
+              exercises: d.exerciseIds.map((exerciseId) => ({
+                exerciseId,
+                targetSets: 3,
+                targetReps: "8-12",
+                targetWeightKg: 20,
+              })),
+            },
+            i,
+          ),
+        )
       }
 
       setDays(generated)
@@ -132,6 +154,25 @@ export function RoutineBuilder() {
         ? "Drafting your split…"
         : "Validating every exercise against the library…"
 
+  function openSplitDialog() {
+    setPendingSplit(routine?.splitType ?? null)
+    setSplitDialogOpen(true)
+  }
+
+  /**
+   * Re-labels the existing days in place and carries exercises across by muscle-focus overlap,
+   * so switching split doesn't throw away work the way rebuilding from the wizard does.
+   */
+  function confirmSplitChange() {
+    if (!routine || !pendingSplit) return
+    const next = applySplitInPlace(days, pendingSplit, routine.schedule)
+    setDays(next)
+    const preset = splitPreset(pendingSplit)
+    setRoutine({ ...routine, splitType: pendingSplit, name: `${preset.label} — ${describeSchedule(routine.schedule)}`, days: next })
+    setSplitDialogOpen(false)
+    toast.success(`Switched to ${preset.label} — save to keep it`)
+  }
+
   function handleSave() {
     if (!routine) return
     run(
@@ -140,7 +181,7 @@ export function RoutineBuilder() {
           name: routine.name,
           splitType: routine.splitType,
           schedule: routine.schedule,
-          days,
+          days: toSaveRoutineDays(days),
         }),
       (res) => setRoutine(res.routine),
     )
@@ -162,8 +203,11 @@ export function RoutineBuilder() {
               <MoreVertical className="size-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => navigate("/train/routine/new")}>
+              <DropdownMenuItem onClick={openSplitDialog} disabled={routine == null}>
                 <Repeat className="size-4" /> Change split
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/train/routine/new")}>
+                <RotateCcw className="size-4" /> Rebuild routine from scratch
               </DropdownMenuItem>
               {aiConfigured && (
                 <DropdownMenuItem onClick={() => setAiDialogOpen(true)}>
@@ -174,6 +218,35 @@ export function RoutineBuilder() {
           </DropdownMenu>
         }
       />
+
+      <Dialog open={splitDialogOpen} onOpenChange={setSplitDialogOpen}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-1.5">
+              <Repeat className="size-4 text-primary" /> Change split
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            Days are re-labelled in place and exercises carry over where the muscle focus still
+            matches. Days that no longer fit are archived, not deleted.
+          </p>
+          <div className="py-1">
+            <SplitPicker value={pendingSplit} onChange={setPendingSplit} />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" className="h-11" onClick={() => setSplitDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              className="h-11 text-base"
+              onClick={confirmSplitChange}
+              disabled={!pendingSplit || pendingSplit === routine?.splitType}
+            >
+              Apply split
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {aiConfigured && (
         <Dialog open={aiDialogOpen} onOpenChange={setAiDialogOpen}>
@@ -322,6 +395,7 @@ export function RoutineBuilder() {
               activeDay={activeDay}
               onActiveDayChange={setActiveDay}
               equipment={equipment}
+              allowDayMutations={routine.schedule.mode === "weekly"}
             />
           </>
         )}

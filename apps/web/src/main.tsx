@@ -13,18 +13,18 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ModeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-      <AppearanceProvider>
-        <AiProviderProvider>
-          <SessionProvider>
+      <SessionProvider>
+        <AppearanceProvider>
+          <AiProviderProvider>
             <TooltipProvider>
               <BrowserRouter>
                 <App />
               </BrowserRouter>
               <Toaster position="top-center" />
             </TooltipProvider>
-          </SessionProvider>
-        </AiProviderProvider>
-      </AppearanceProvider>
+          </AiProviderProvider>
+        </AppearanceProvider>
+      </SessionProvider>
     </ModeProvider>
   </StrictMode>,
 )

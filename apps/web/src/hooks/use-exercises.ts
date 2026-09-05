@@ -1,9 +1,13 @@
 import * as React from "react"
-import { listExercises } from "@/lib/api-client"
+import { listExercises, fetchExerciseYoutube } from "@/lib/api-client"
 import type { Exercise } from "shared"
 
 let cache: Exercise[] | null = null
 let inflight: Promise<Exercise[]> | null = null
+
+/** Per-exercise YouTube lookup — at most one network attempt for the lifetime of this tab. */
+const youtubeDone = new Set<string>()
+const youtubeInflight = new Map<string, Promise<Exercise>>()
 
 async function loadExercises(): Promise<Exercise[]> {
   if (cache) return cache
@@ -24,6 +28,48 @@ export function invalidateExerciseCache() {
   cache = null
 }
 
+export function upsertExerciseInCache(updated: Exercise) {
+  if (!cache) {
+    cache = [updated]
+    return
+  }
+  const i = cache.findIndex((e) => e.id === updated.id)
+  if (i >= 0) cache = cache.map((e) => (e.id === updated.id ? updated : e))
+  else cache = [...cache, updated]
+}
+
+/**
+ * Lazy YouTube reference fetch (architecture §4). Idempotent: once attempted for an id
+ * (success, skip, or failure), never hits the quota-limited endpoint again this session.
+ * Ready exercises short-circuit without a network call.
+ */
+export async function ensureExerciseYoutube(id: string): Promise<Exercise | null> {
+  const cached = cache?.find((e) => e.id === id)
+  if (cached?.youtubeStatus === "ready") {
+    youtubeDone.add(id)
+    return cached
+  }
+  if (youtubeDone.has(id)) {
+    return cache?.find((e) => e.id === id) ?? null
+  }
+  const existing = youtubeInflight.get(id)
+  if (existing) return existing
+
+  const promise = (async () => {
+    try {
+      const { exercise: updated } = await fetchExerciseYoutube(id)
+      upsertExerciseInCache(updated)
+      return updated
+    } finally {
+      youtubeDone.add(id)
+      youtubeInflight.delete(id)
+    }
+  })()
+
+  youtubeInflight.set(id, promise)
+  return promise
+}
+
 export function useExercises() {
   const [exercises, setExercises] = React.useState<Exercise[] | null>(cache)
   const [error, setError] = React.useState<string | null>(null)
@@ -35,6 +81,11 @@ export function useExercises() {
     const list = await loadExercises()
     setExercises(list)
     return list
+  }, [])
+
+  const applyExercise = React.useCallback((updated: Exercise) => {
+    upsertExerciseInCache(updated)
+    setExercises(cache)
   }, [])
 
   React.useEffect(() => {
@@ -56,7 +107,7 @@ export function useExercises() {
     [exercises],
   )
 
-  return { exercises, byId, loading: exercises === null && !error, error, refresh }
+  return { exercises, byId, loading: exercises === null && !error, error, refresh, applyExercise }
 }
 
 /** Imperative lookup for non-hook call sites (e.g. after await load). */

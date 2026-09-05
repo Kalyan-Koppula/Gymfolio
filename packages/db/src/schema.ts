@@ -1,9 +1,6 @@
 import { sqliteTable, text, integer, real, uniqueIndex } from "drizzle-orm/sqlite-core"
 
-// Scoped to the Foundation pass (architecture §2, trimmed) plus auth, settings, and routines.
-// AIProviderConfig/ThemePreference are still deliberately not defined — those stay
-// localStorage-only client preferences, not account data that needs to follow the user
-// across devices.
+// Scoped to the Foundation pass (architecture §2) plus auth, settings, routines, workouts, theme.
 
 export const tenants = sqliteTable("tenants", {
   id: text("id").primaryKey(),
@@ -67,19 +64,23 @@ export const credentials = sqliteTable("credentials", {
   lastUsedAt: integer("last_used_at"),
 })
 
-export const bodyMetricEntries = sqliteTable("body_metric_entries", {
-  id: text("id").primaryKey(),
-  tenantId: text("tenant_id")
-    .notNull()
-    .references(() => tenants.id),
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id),
-  date: text("date").notNull(), // YYYY-MM-DD
-  weightKg: real("weight_kg").notNull(),
-  measurementsJson: text("measurements_json"), // optional JSON-encoded Record<string, number>
-  updatedAt: integer("updated_at").notNull(),
-})
+export const bodyMetricEntries = sqliteTable(
+  "body_metric_entries",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    date: text("date").notNull(), // YYYY-MM-DD — one row per user+date (upsert)
+    weightKg: real("weight_kg").notNull(),
+    measurementsJson: text("measurements_json"), // optional JSON-encoded Record<string, number>
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [uniqueIndex("body_metric_entries_tenant_user_date_idx").on(table.tenantId, table.userId, table.date)],
+)
 
 export const hydrationEntries = sqliteTable("hydration_entries", {
   id: text("id").primaryKey(),
@@ -94,20 +95,24 @@ export const hydrationEntries = sqliteTable("hydration_entries", {
   updatedAt: integer("updated_at").notNull(),
 })
 
-export const sleepEntries = sqliteTable("sleep_entries", {
-  id: text("id").primaryKey(),
-  tenantId: text("tenant_id")
-    .notNull()
-    .references(() => tenants.id),
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id),
-  date: text("date").notNull(),
-  startTime: text("start_time").notNull(), // HH:MM
-  endTime: text("end_time").notNull(), // HH:MM
-  qualityRating: integer("quality_rating").notNull(), // 1-5
-  updatedAt: integer("updated_at").notNull(),
-})
+export const sleepEntries = sqliteTable(
+  "sleep_entries",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    date: text("date").notNull(), // one row per user+date (upsert)
+    startTime: text("start_time").notNull(), // HH:MM
+    endTime: text("end_time").notNull(), // HH:MM
+    qualityRating: integer("quality_rating").notNull(), // 1-5
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [uniqueIndex("sleep_entries_tenant_user_date_idx").on(table.tenantId, table.userId, table.date)],
+)
 
 export const macroEntries = sqliteTable(
   "macro_entries",
@@ -126,7 +131,7 @@ export const macroEntries = sqliteTable(
     fat: integer("fat").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
-  (table) => [uniqueIndex("macro_entries_user_date_idx").on(table.userId, table.date)],
+  (table) => [uniqueIndex("macro_entries_tenant_user_date_idx").on(table.tenantId, table.userId, table.date)],
 )
 
 // One row per user — hydration/macro goals and equipment inventory set during onboarding
@@ -181,7 +186,7 @@ export const workoutLogs = sqliteTable("workout_logs", {
   date: text("date").notNull(), // YYYY-MM-DD
   dayLabel: text("day_label").notNull(),
   dayIndex: integer("day_index").notNull(),
-  status: text("status").notNull().default("in_progress"), // "in_progress" | "completed"
+  status: text("status").notNull().default("in_progress"), // "in_progress" | "completed" | "skipped"
   setsPlanned: integer("sets_planned").notNull(),
   setsCompleted: integer("sets_completed").notNull().default(0),
   startedAt: integer("started_at").notNull(),
@@ -215,12 +220,28 @@ export const exercises = sqliteTable("exercises", {
   youtubeJson: text("youtube_json"), // optional { title, channel, views }
 })
 
+// Per-user appearance — D1 is source of truth; clients mirror to localStorage for instant paint.
+export const themePreferences = sqliteTable("theme_preferences", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id),
+  tenantId: text("tenant_id")
+    .notNull()
+    .references(() => tenants.id),
+  themeId: text("theme_id").notNull().default("zinc"),
+  mode: text("mode").notNull().default("system"), // light | dark | system
+  radius: real("radius").notNull().default(0.625),
+  fontPairing: text("font_pairing").notNull().default("sans"),
+  updatedAt: integer("updated_at").notNull(),
+})
+
 // Per-tenant encrypted BYOK config — at most one row per tenant for v0.
 export const aiProviderConfigs = sqliteTable("ai_provider_configs", {
   tenantId: text("tenant_id")
     .primaryKey()
     .references(() => tenants.id),
-  provider: text("provider").notNull(), // anthropic | openai | google | local
+  provider: text("provider").notNull(), // openrouter | local
+  modelSlug: text("model_slug").notNull().default("openrouter/free"),
   encryptedApiKey: text("encrypted_api_key").notNull(),
   iv: text("iv").notNull(),
   endpointOverride: text("endpoint_override"),

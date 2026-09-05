@@ -7,24 +7,25 @@ import { ExerciseMediaPlayer } from "@/components/shared/exercise-media-player"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
 import { StickyActionBar } from "@/components/shared/sticky-action-bar"
+import { AddExerciseSheet } from "@/components/shared/add-exercise-sheet"
 import { useApiWrite } from "@/hooks/use-api-write"
-import { EQUIPMENT_LABELS, exerciseMatchesDayFocus, resolveDayMuscleFocus } from "@/lib/stub-data"
-import { useExercises } from "@/hooks/use-exercises"
-import { fetchExerciseYoutube, getRoutine, saveRoutine } from "@/lib/api-client"
+import { EQUIPMENT_LABELS, toSaveRoutineDays } from "@/lib/stub-data"
+import { useExercises, ensureExerciseYoutube } from "@/hooks/use-exercises"
+import { getRoutine, saveRoutine } from "@/lib/api-client"
 import type { Exercise, Routine, RoutineDay } from "shared"
 
 export function ExerciseDetail() {
   const navigate = useNavigate()
   const { id } = useParams()
-  const { byId, loading, refresh } = useExercises()
+  const { byId, loading, applyExercise } = useExercises()
   const [exercise, setExercise] = React.useState<Exercise | undefined>()
   const [routine, setRoutine] = React.useState<Routine | null | undefined>(undefined)
   const [pickerOpen, setPickerOpen] = React.useState(false)
-  const { status, run } = useApiWrite("Added to routine")
+  const { status, run } = useApiWrite<{ routine: Routine }>("Added to routine")
   const base = id ? byId(id) : undefined
+  const youtubeStatus = base?.youtubeStatus
 
   React.useEffect(() => {
     getRoutine()
@@ -33,27 +34,29 @@ export function ExerciseDetail() {
   }, [])
 
   React.useEffect(() => {
-    setExercise(base)
+    if (base) setExercise(base)
   }, [base])
 
+  // YouTube lazy-fetch: at most once per exercise id (module-level gate in ensureExerciseYoutube).
+  // Depend only on id + status primitive — never on `base` object or `refresh`.
   React.useEffect(() => {
-    if (!id || !base || base.youtubeStatus === "ready" || base.youtubeStatus === "pending") return
+    if (!id || !youtubeStatus) return
+    if (youtubeStatus === "ready" || youtubeStatus === "pending") return
     let cancelled = false
-    ;(async () => {
-      try {
-        const { exercise: updated } = await fetchExerciseYoutube(id)
-        if (!cancelled) {
+    void ensureExerciseYoutube(id)
+      .then((updated) => {
+        if (!cancelled && updated) {
           setExercise(updated)
-          await refresh()
+          applyExercise(updated)
         }
-      } catch {
-        // Leave not_fetched state — user still has photo reference.
-      }
-    })()
+      })
+      .catch(() => {
+        // Leave not_fetched — photo reference still works; do not retry (quota).
+      })
     return () => {
       cancelled = true
     }
-  }, [id, base, refresh])
+  }, [id, youtubeStatus, applyExercise])
 
   if (loading) {
     return (
@@ -101,6 +104,7 @@ export function ExerciseDetail() {
                 targetSets: 3,
                 targetReps: "10",
                 targetWeightKg: shown.equipment.length === 1 && shown.equipment[0] === "bodyweight" ? null : 20,
+                orderIndex: d.exercises.length,
               },
             ],
           },
@@ -112,7 +116,7 @@ export function ExerciseDetail() {
           name: routine.name,
           splitType: routine.splitType,
           schedule: routine.schedule,
-          days,
+          days: toSaveRoutineDays(days),
         }),
       (res) => {
         setRoutine(res.routine)
@@ -120,16 +124,6 @@ export function ExerciseDetail() {
       },
     )
   }
-
-  const sortedDays =
-    routine?.days.slice().sort((a, b) => {
-      const focus = resolveDayMuscleFocus(a.label)
-      const focusB = resolveDayMuscleFocus(b.label)
-      const aMatch = focus && exerciseMatchesDayFocus(shown, focus)
-      const bMatch = focusB && exerciseMatchesDayFocus(shown, focusB)
-      if (aMatch === bMatch) return 0
-      return aMatch ? -1 : 1
-    }) ?? []
 
   return (
     <div>
@@ -182,39 +176,15 @@ export function ExerciseDetail() {
         </Button>
       </StickyActionBar>
 
-      <Sheet open={pickerOpen} onOpenChange={setPickerOpen}>
-        <SheetContent side="bottom" className="max-h-[70vh] overflow-y-auto rounded-t-2xl">
-          <SheetHeader>
-            <SheetTitle>Add {shown.name} to…</SheetTitle>
-          </SheetHeader>
-          <div className="space-y-1 px-4 pb-4">
-            {sortedDays.map((day) => {
-              const focus = resolveDayMuscleFocus(day.label)
-              const suggested = focus ? exerciseMatchesDayFocus(shown, focus) : false
-              const already = day.exercises.some((e) => e.exerciseId === shown.id)
-              return (
-                <button
-                  key={day.id}
-                  type="button"
-                  disabled={already || status === "saving"}
-                  onClick={() => addToDay(day.id)}
-                  className="flex w-full items-center justify-between rounded-lg px-3 py-3 text-left text-sm hover:bg-muted disabled:opacity-50"
-                >
-                  <span>
-                    {day.label}
-                    {suggested ? (
-                      <span className="ml-2 text-xs font-normal text-primary">Suggested</span>
-                    ) : null}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {already ? "Added" : `${day.exercises.length} exercises`}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-        </SheetContent>
-      </Sheet>
+      <AddExerciseSheet
+        mode="pick-day"
+        exercise={shown}
+        days={routine?.days ?? []}
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        disabled={status === "saving"}
+        onAdd={addToDay}
+      />
     </div>
   )
 }

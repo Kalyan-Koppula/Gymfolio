@@ -3,9 +3,13 @@ import { TopBar } from "@/components/nav/top-bar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
-import { Check, Laptop, Moon, Sun } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { StickyActionBar } from "@/components/shared/sticky-action-bar"
+import { Check, Laptop, Loader2, Moon, Sun } from "lucide-react"
 import { useAppearance, type Palette } from "@/contexts/appearance-provider"
+import type { ThemeMode } from "shared"
 import { cn } from "@/lib/utils"
+import { toast } from "sonner"
 
 const PALETTES: Array<{ id: Palette; label: string; swatch: string }> = [
   { id: "zinc", label: "Zinc", swatch: "oklch(0.205 0 0)" },
@@ -19,16 +23,34 @@ const PALETTES: Array<{ id: Palette; label: string; swatch: string }> = [
 ]
 
 export function AppearanceSettings() {
-  const { theme, setTheme } = useTheme()
-  const { palette, setPalette, radius, setRadius, fontPairing, setFontPairing } = useAppearance()
+  const { theme } = useTheme()
+  const {
+    palette,
+    setPalette,
+    radius,
+    setRadius,
+    fontPairing,
+    setFontPairing,
+    setModePreview,
+    dirty,
+    saving,
+    saveError,
+    saveAppearance,
+  } = useAppearance()
+
+  async function onSave() {
+    const ok = await saveAppearance()
+    if (ok) toast.success("Appearance saved")
+    else if (saveError) toast.error(saveError)
+  }
 
   return (
     <div>
       <TopBar title="Appearance" back />
-      <div className="space-y-5 px-4 py-4">
+      <div className="space-y-5 px-4 py-4 pb-28">
         <p className="text-xs text-muted-foreground">
-          Every control here applies instantly — no save/reload. This is the runtime surface of the
-          shadcn CSS-variable theming system (architecture §5).
+          Preview changes instantly on this device. Tap Save to sync them to your account — browsing
+          options before Save never hits the network.
         </p>
 
         <Card>
@@ -36,13 +58,14 @@ export function AppearanceSettings() {
             <Label>Mode</Label>
             <div className="grid grid-cols-3 gap-2">
               {[
-                { id: "light", label: "Light", icon: Sun },
-                { id: "dark", label: "Dark", icon: Moon },
-                { id: "system", label: "System", icon: Laptop },
+                { id: "light" as ThemeMode, label: "Light", icon: Sun },
+                { id: "dark" as ThemeMode, label: "Dark", icon: Moon },
+                { id: "system" as ThemeMode, label: "System", icon: Laptop },
               ].map((m) => (
                 <button
                   key={m.id}
-                  onClick={() => setTheme(m.id)}
+                  type="button"
+                  onClick={() => setModePreview(m.id)}
                   className="flex h-16 flex-col items-center justify-center gap-1 rounded-lg border text-xs font-medium transition-all duration-150 active:scale-95"
                   style={{
                     borderColor: theme === m.id ? "var(--primary)" : "var(--border)",
@@ -67,14 +90,20 @@ export function AppearanceSettings() {
               {PALETTES.map((p) => (
                 <button
                   key={p.id}
+                  type="button"
                   onClick={() => setPalette(p.id)}
                   aria-label={p.label}
                   aria-pressed={palette === p.id}
                   className="flex flex-col items-center gap-1.5 rounded-lg border p-2.5 transition-all duration-150 active:scale-95"
                   style={{ borderColor: palette === p.id ? "var(--primary)" : "var(--border)" }}
                 >
-                  <div className="relative flex size-7 items-center justify-center rounded-full ring-1 ring-black/5" style={{ backgroundColor: p.swatch }}>
-                    {palette === p.id && <Check className="size-3.5 text-white animate-in zoom-in-50 duration-200 ease-out" />}
+                  <div
+                    className="relative flex size-7 items-center justify-center rounded-full ring-1 ring-black/5"
+                    style={{ backgroundColor: p.swatch }}
+                  >
+                    {palette === p.id && (
+                      <Check className="size-3.5 text-white animate-in zoom-in-50 duration-200 ease-out" />
+                    )}
                   </div>
                   <span className="text-[11px] font-medium">{p.label}</span>
                 </button>
@@ -113,29 +142,38 @@ export function AppearanceSettings() {
             <Label>Font pairing</Label>
             <div className="grid grid-cols-2 gap-2">
               <button
+                type="button"
                 onClick={() => setFontPairing("sans")}
                 className="rounded-lg border p-3 text-left transition-all duration-150 active:scale-95"
                 style={{ borderColor: fontPairing === "sans" ? "var(--primary)" : "var(--border)" }}
               >
-                <p className="font-heading text-lg" style={{ fontFamily: "'Geist Variable', sans-serif" }}>
-                  Today's workout
-                </p>
+                <p className="font-heading text-lg">Today's workout</p>
                 <p className="mt-1 text-xs text-muted-foreground">Geist — sans only</p>
               </button>
               <button
+                type="button"
                 onClick={() => setFontPairing("serif")}
                 className="rounded-lg border p-3 text-left transition-all duration-150 active:scale-95"
                 style={{ borderColor: fontPairing === "serif" ? "var(--primary)" : "var(--border)" }}
               >
-                <p className="text-lg" style={{ fontFamily: "'Fraunces Variable', ui-serif, serif" }}>
-                  Today's workout
-                </p>
+                <p className="font-heading text-lg">Today's workout</p>
                 <p className="mt-1 text-xs text-muted-foreground">Fraunces heading + Geist body</p>
               </button>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Preview above uses the live CSS variables — switch pairings and watch headings update
+              across the app before you Save.
+            </p>
           </CardContent>
         </Card>
       </div>
+
+      <StickyActionBar>
+        <Button className="h-12 w-full text-base" disabled={!dirty || saving} onClick={() => void onSave()}>
+          {saving ? <Loader2 className="size-4 animate-spin" /> : null}
+          {saving ? "Saving…" : dirty ? "Save appearance" : "Saved"}
+        </Button>
+      </StickyActionBar>
     </div>
   )
 }

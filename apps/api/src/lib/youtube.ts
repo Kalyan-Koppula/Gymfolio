@@ -32,6 +32,70 @@ export type YoutubeRef = {
   views: string
 }
 
+/**
+ * Daily Cron: revalidate stored video IDs via videos.list (1 unit per ≤50 IDs).
+ * Marks deleted/privated refs as not_fetched so the next detail view can re-search.
+ */
+export async function revalidateYoutubeRefs(
+  db: D1Database,
+  kv: KVNamespace,
+  apiKey: string,
+): Promise<{ checked: number; cleared: number }> {
+  const rows = await db
+    .prepare(
+      `SELECT id, youtube_json FROM exercises WHERE youtube_status = 'ready' AND youtube_json IS NOT NULL`,
+    )
+    .all<{ id: string; youtube_json: string }>()
+
+  const entries: Array<{ id: string; videoId: string }> = []
+  for (const row of rows.results ?? []) {
+    try {
+      const parsed = JSON.parse(row.youtube_json) as { videoId?: string }
+      if (parsed.videoId) entries.push({ id: row.id, videoId: parsed.videoId })
+    } catch {
+      // skip malformed
+    }
+  }
+
+  let checked = 0
+  let cleared = 0
+  const batchSize = 50
+
+  for (let i = 0; i < entries.length; i += batchSize) {
+    const batch = entries.slice(i, i + batchSize)
+    const cost = 1
+    const used = await getYoutubeUnitsUsed(kv)
+    if (!canSpendYoutubeQuota(used, cost)) break
+
+    const ids = batch.map((b) => b.videoId).join(",")
+    const url = `https://www.googleapis.com/youtube/v3/videos?part=status,id&id=${ids}&key=${apiKey}`
+    const res = await fetch(url)
+    await addYoutubeUnits(kv, cost)
+    checked += batch.length
+    if (!res.ok) continue
+
+    const data = (await res.json()) as { items?: Array<{ id?: string; status?: { privacyStatus?: string } }> }
+    const live = new Set(
+      (data.items ?? [])
+        .filter((it) => it.id && it.status?.privacyStatus !== "private")
+        .map((it) => it.id!),
+    )
+
+    for (const entry of batch) {
+      if (live.has(entry.videoId)) continue
+      await db
+        .prepare(
+          `UPDATE exercises SET youtube_status = 'not_fetched', youtube_json = NULL WHERE id = ?`,
+        )
+        .bind(entry.id)
+        .run()
+      cleared += 1
+    }
+  }
+
+  return { checked, cleared }
+}
+
 export async function searchExerciseVideo(
   apiKey: string,
   exerciseName: string,

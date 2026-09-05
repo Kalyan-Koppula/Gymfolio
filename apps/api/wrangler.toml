@@ -22,6 +22,10 @@ binding = "MEDIA"
 bucket_name = "fitness-tracker-media"
 preview_bucket_name = "fitness-tracker-media"
 
+# Daily Cron: YouTube revalidation + OpenRouter model-capability cache (architecture §4 / §7).
+[triggers]
+crons = ["0 4 * * *"]
+
 [vars]
 ENVIRONMENT = "development"
 # Dev-only fallback so BYOK encrypt/decrypt works under `wrangler dev` without secrets.

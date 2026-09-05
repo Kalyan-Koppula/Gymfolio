@@ -7,11 +7,14 @@ import { cn } from "@/lib/utils"
 export function TopBar({
   title,
   back,
+  onBack,
   action,
   className,
 }: {
   title: string
   back?: boolean
+  /** Overrides default history back — e.g. minimize workout without finishing. */
+  onBack?: () => void
   action?: React.ReactNode
   className?: string
 }) {
@@ -24,13 +27,13 @@ export function TopBar({
       )}
       style={{ paddingTop: "var(--safe-top)", height: "calc(3.5rem + var(--safe-top))" }}
     >
-      {back && (
+      {(back || onBack) && (
         <Button
           variant="ghost"
           size="icon"
-          aria-label="Go back"
+          aria-label={onBack ? "Minimize workout" : "Go back"}
           className="-ml-2 size-11"
-          onClick={() => navigate(-1)}
+          onClick={() => (onBack ? onBack() : navigate(-1))}
         >
           <ChevronLeft className="size-5" />
         </Button>

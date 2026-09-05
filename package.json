@@ -10,9 +10,13 @@
     "db:generate": "pnpm --filter db generate",
     "db:migrate:local": "pnpm --filter api migrate:local",
     "seed:media": "pnpm --filter db seed:media",
-    "preview:gifs": "pnpm --filter db preview:gifs"
+    "preview:gifs": "pnpm --filter db preview:gifs",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "e2e:reset-db": "node e2e/helpers/reset-local-db.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "concurrently": "^9.1.2"
   }
 }

@@ -1,10 +1,10 @@
 import * as React from "react"
 import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
-import { Check, ChevronRight, History, ListChecks, X } from "lucide-react"
+import { Check, ChevronRight, History, ListChecks, Moon, X } from "lucide-react"
 import { TopBar } from "@/components/nav/top-bar"
 import { OfflineBanner } from "@/components/shared/offline-banner"
-import { ExerciseThumb } from "@/components/shared/exercise-thumb"
+import { ExerciseMediaQuickView } from "@/components/shared/exercise-media-quick-view"
 import { EmptyState } from "@/components/shared/empty-state"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
@@ -22,7 +22,8 @@ import {
   logWorkoutSet,
   startWorkout,
 } from "@/lib/api-client"
-import { getCurrentDay, suggestNextWeight, type RoutineDay } from "@/lib/stub-data"
+import { useWorkoutSession } from "@/contexts/workout-session-context"
+import { activeDays, suggestNextWeight, type RoutineDay } from "@/lib/stub-data"
 import type { LastPerformance, Routine } from "shared"
 
 type SetLog = { reps: number; weightKg: number; completed: boolean }
@@ -43,8 +44,9 @@ export function ActiveWorkout() {
       .then(async (res) => {
         const r = res.routine
         setRoutine(r)
-        if (r && r.days.length > 0) {
-          const step = await getCycleStep(r.days.length)
+        const slots = r ? activeDays(r.days).length : 0
+        if (slots > 0) {
+          const step = await getCycleStep(slots)
           setCycleStep(step.cycleStep)
         }
       })
@@ -66,7 +68,9 @@ export function ActiveWorkout() {
     )
   }
 
-  if (routine === null || routine.days.length === 0) {
+  const slots = routine ? activeDays(routine.days) : []
+
+  if (routine === null || slots.length === 0) {
     return (
       <div className="px-4 py-8">
         <EmptyState
@@ -74,13 +78,42 @@ export function ActiveWorkout() {
           title="No routine to work from yet"
           description="Build a routine first — then today's workout picks itself from wherever you are in the split."
           actionLabel="Go to Routine Builder"
-          onAction={() => navigate("/train/routine")}
+          onAction={() => navigate("/train/routine/new")}
         />
       </div>
     )
   }
 
-  const day = getCurrentDay(routine, cycleStep)
+  const day = slots[cycleStep % slots.length]
+
+  if (day.dayType === "rest") {
+    return (
+      <div className="px-4 py-8">
+        <EmptyState
+          icon={Moon}
+          title={`${day.label} — nothing to log`}
+          description="Today's slot is a rest day. Mark it done from Today to advance the cycle."
+          actionLabel="Back to Today"
+          onAction={() => navigate("/today")}
+        />
+      </div>
+    )
+  }
+
+  if (day.exercises.length === 0) {
+    return (
+      <div className="px-4 py-8">
+        <EmptyState
+          icon={ListChecks}
+          title={`${day.label} has no exercises`}
+          description="Add exercises to this day in the routine builder, then start the session."
+          actionLabel="Go to Routine Builder"
+          onAction={() => navigate("/train/routine/new")}
+        />
+      </div>
+    )
+  }
+
   const dayWithPerf: RoutineDay = {
     ...day,
     exercises: day.exercises.map((re) => {
@@ -95,7 +128,7 @@ export function ActiveWorkout() {
     <ActiveWorkoutSession
       key={day.id}
       day={dayWithPerf}
-      dayIndex={cycleStep % routine.days.length}
+      dayIndex={cycleStep % slots.length}
       byId={byId}
     />
   )
@@ -111,6 +144,7 @@ function ActiveWorkoutSession({
   byId: (id: string) => import("shared").Exercise | undefined
 }) {
   const navigate = useNavigate()
+  const { refresh: refreshSession, clear: clearSession } = useWorkoutSession()
   const [exIndex, setExIndex] = React.useState(0)
   const [workoutId, setWorkoutId] = React.useState<string | null>(null)
   const target = day.exercises[exIndex]
@@ -149,6 +183,7 @@ function ActiveWorkoutSession({
       .then((res) => {
         if (cancelled) return
         setWorkoutId(res.workout.id)
+        void refreshSession()
         // Restore already-logged sets if resuming.
         if (res.workout.sets && res.workout.sets.length > 0) {
           setSetsByExercise((prev) => {
@@ -170,7 +205,7 @@ function ActiveWorkoutSession({
     return () => {
       cancelled = true
     }
-  }, [day.label, dayIndex, totalPlannedSets])
+  }, [day.label, dayIndex, totalPlannedSets, refreshSession])
 
   function updateSet(idx: number, patch: Partial<SetLog>) {
     setSetsByExercise((prev) => ({
@@ -204,7 +239,12 @@ function ActiveWorkoutSession({
     }
     runFinish(
       () => finishWorkout(workoutId),
-      () => navigate("/today"),
+      () => {
+        // Drop the resume bar immediately, then reconcile against the server.
+        clearSession()
+        void refreshSession()
+        navigate("/today")
+      },
     )
   }
 
@@ -233,6 +273,11 @@ function ActiveWorkoutSession({
     <div>
       <TopBar
         title={exercise.name}
+        onBack={() => {
+          // Session stays live — resume mini-bar picks it up on other screens.
+          void refreshSession()
+          navigate("/today")
+        }}
         action={
           <Badge variant="secondary">
             Ex {exIndex + 1}/{day.exercises.length}
@@ -250,7 +295,7 @@ function ActiveWorkoutSession({
         </div>
 
         <div className="flex gap-3">
-          <ExerciseThumb hasGif={exercise.hasGif} exerciseId={exercise.id} className="w-20 shrink-0" />
+          <ExerciseMediaQuickView exercise={exercise} className="w-24 shrink-0" />
           <div className="flex-1 space-y-1">
             <p className="text-sm text-muted-foreground">
               Target: {target.targetSets} × {target.targetReps}
@@ -364,9 +409,13 @@ function ActiveWorkoutSession({
               <Button
                 variant="destructive"
                 size="icon"
-                aria-label="Cancel workout"
+                aria-label="Leave workout"
                 className="size-12 shrink-0"
-                onClick={() => navigate("/today")}
+                onClick={() => {
+                  // The session stays open server-side — the resume bar brings them back.
+                  void refreshSession()
+                  navigate("/today")
+                }}
               >
                 <X className="size-5" />
               </Button>

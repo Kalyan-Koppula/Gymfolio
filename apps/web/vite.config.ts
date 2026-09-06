@@ -30,33 +30,30 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // App shell + static assets. API writes stay network-only (architecture §6).
+        // App shell for client routes only — never claim /api (Pages Function / Worker).
         navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/api\//],
+        cleanupOutdatedCaches: true,
         runtimeCaching: [
+          // Media files only (images). Must be before the /api catch-all.
           {
-            urlPattern: ({ url }) => url.pathname.startsWith('/api/exercises'),
-            handler: 'NetworkFirst',
+            urlPattern: ({ url }) =>
+              url.pathname.startsWith('/api/media/exercises/') &&
+              (url.pathname.endsWith('.webp') ||
+                url.pathname.endsWith('.gif') ||
+                url.pathname.endsWith('.jpg')),
+            handler: 'CacheFirst',
             options: {
-              cacheName: 'exercise-api',
-              networkTimeoutSeconds: 3,
-              expiration: { maxEntries: 4, maxAgeSeconds: 60 * 60 * 24 * 7 },
+              // New name busts caches that may hold SPA HTML from broken /api deploys.
+              cacheName: 'exercise-media-v2',
+              expiration: { maxEntries: 400, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [0, 200] },
             },
           },
+          // All other /api/* — network only (never cache JSON/HTML mistakes).
           {
             urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
             handler: 'NetworkOnly',
-          },
-          {
-            urlPattern: ({ url }) =>
-              url.pathname.startsWith("/api/media/exercises/") &&
-              (url.pathname.endsWith(".webp") ||
-                url.pathname.endsWith(".gif") ||
-                url.pathname.endsWith(".jpg")),
-            handler: "CacheFirst",
-            options: {
-              cacheName: "exercise-media",
-              expiration: { maxEntries: 400, maxAgeSeconds: 60 * 60 * 24 * 30 },
-            },
           },
         ],
       },

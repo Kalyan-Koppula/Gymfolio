@@ -22,12 +22,15 @@ pnpm staging:migrate
 # 3a) Smoke-seed 20 exercises → staging D1 + Backblaze B2
 pnpm staging:seed:smoke
 
-# 3b) Full catalog (slow / large upload)
+# 3b) Full catalog (process images + upload B2 + write D1) — slow / large
 pnpm staging:seed
 
-# 3c) Re-upload already-built WebPs only
-pnpm staging:seed:upload
+# 3c) If local .cache/free-exercise-db/out already has WebPs (processing done):
+pnpm staging:seed:upload   # upload cached WebPs → B2 only
+pnpm staging:seed:d1       # write exercise catalog → remote D1 only
 
+# Broken thumbs usually mean D1 has has_gif=1 but B2 is missing the object
+# (d1-only without a completed upload), or upload never finished. Run 3c both steps.
 # 4) Deploy API + Pages from this machine
 pnpm staging:deploy
 # or:

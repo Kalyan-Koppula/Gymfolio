@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useWindowVirtualizer } from "@tanstack/react-virtual"
 import { ClipboardList, Filter, Search, Settings2, X } from "lucide-react"
 import { Link } from "react-router-dom"
 import { TopBar } from "@/components/nav/top-bar"
@@ -15,12 +16,96 @@ import {
   SheetFooter,
   SheetTrigger,
 } from "@/components/ui/sheet"
-import { EQUIPMENT_LABELS, type Equipment, type MuscleGroup } from "@/lib/stub-data"
+import { EQUIPMENT_LABELS, type Equipment, type Exercise, type MuscleGroup } from "@/lib/stub-data"
 import { useExercises } from "@/hooks/use-exercises"
 import { Skeleton } from "@/components/ui/skeleton"
 
 const MUSCLE_GROUPS: MuscleGroup[] = ["chest", "back", "shoulders", "legs", "arms", "core", "glutes"]
 const EQUIPMENT = Object.keys(EQUIPMENT_LABELS) as Equipment[]
+
+/** Match Tailwind breakpoints used by the exercise grid (viewport-based). */
+function useGridColumns() {
+  const [cols, setCols] = React.useState(1)
+  React.useEffect(() => {
+    const mq = [
+      window.matchMedia("(min-width: 1024px)"),
+      window.matchMedia("(min-width: 768px)"),
+      window.matchMedia("(min-width: 640px)"),
+    ]
+    const update = () => {
+      if (mq[0].matches) setCols(4)
+      else if (mq[1].matches) setCols(3)
+      else if (mq[2].matches) setCols(2)
+      else setCols(1)
+    }
+    update()
+    for (const m of mq) m.addEventListener("change", update)
+    return () => {
+      for (const m of mq) m.removeEventListener("change", update)
+    }
+  }, [])
+  return cols
+}
+
+function VirtualExerciseGrid({ exercises }: { exercises: Exercise[] }) {
+  const columns = useGridColumns()
+  const listRef = React.useRef<HTMLDivElement>(null)
+  const [scrollMargin, setScrollMargin] = React.useState(0)
+
+  React.useLayoutEffect(() => {
+    const el = listRef.current
+    if (!el) return
+    const sync = () => setScrollMargin(el.offsetTop)
+    sync()
+    const ro = new ResizeObserver(sync)
+    ro.observe(document.documentElement)
+    window.addEventListener("resize", sync)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener("resize", sync)
+    }
+  }, [exercises.length, columns])
+
+  const rowCount = Math.ceil(exercises.length / columns) || 0
+  const virtualizer = useWindowVirtualizer({
+    count: rowCount,
+    estimateSize: () => 124,
+    overscan: 4,
+    scrollMargin,
+  })
+
+  return (
+    <div
+      ref={listRef}
+      className="relative w-full"
+      style={{ height: virtualizer.getTotalSize() }}
+    >
+      {virtualizer.getVirtualItems().map((virtualRow) => {
+        const start = virtualRow.index * columns
+        const rowItems = exercises.slice(start, start + columns)
+        return (
+          <div
+            key={virtualRow.key}
+            data-index={virtualRow.index}
+            ref={virtualizer.measureElement}
+            className="absolute top-0 left-0 w-full"
+            style={{
+              transform: `translateY(${virtualRow.start - scrollMargin}px)`,
+            }}
+          >
+            <div
+              className="grid grid-cols-1 gap-3 pb-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+            >
+              {rowItems.map((ex) => (
+                <ExerciseCard key={ex.id} exercise={ex} />
+              ))}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 export function ExerciseLibrary() {
   const { exercises, loading } = useExercises()
@@ -158,15 +243,11 @@ export function ExerciseLibrary() {
             <Skeleton className="h-28 w-full" />
           </div>
         ) : filtered.length > 0 ? (
-          // Keyed by the filter selection (not the search text, so typing doesn't re-fire this
-          // on every keystroke) — applying/clearing a filter chip fades the result set in.
           <div
             key={`${[...muscleFilter].join(",")}|${[...equipmentFilter].join(",")}`}
-            className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 animate-in fade-in duration-200 ease-out"
+            className="animate-in fade-in duration-200 ease-out"
           >
-            {filtered.map((ex) => (
-              <ExerciseCard key={ex.id} exercise={ex} />
-            ))}
+            <VirtualExerciseGrid exercises={filtered} />
           </div>
         ) : (
           <EmptyState

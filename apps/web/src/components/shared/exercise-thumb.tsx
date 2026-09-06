@@ -20,6 +20,13 @@ export function ExerciseThumb({
   const [failed, setFailed] = React.useState(false)
   const [stillFailed, setStillFailed] = React.useState(false)
   const [stillJpgFailed, setStillJpgFailed] = React.useState(false)
+
+  React.useEffect(() => {
+    setFailed(false)
+    setStillFailed(false)
+    setStillJpgFailed(false)
+  }, [exerciseId, hasGif])
+
   const gifSrc = hasGif && exerciseId && !failed ? `/api/media/exercises/${exerciseId}/thumb.webp` : null
   const stillWebp =
     exerciseId && (!hasGif || failed) && !stillFailed
@@ -44,6 +51,8 @@ export function ExerciseThumb({
         <img
           src={src}
           alt=""
+          loading="lazy"
+          decoding="async"
           className="size-full object-cover"
           onError={() => {
             if (gifSrc && !failed) setFailed(true)

@@ -110,6 +110,16 @@ async function loadAwsClient(apiDir) {
   }
 }
 
+/** Accept host-only or full URL; aws4fetch requires an absolute URL. */
+function normalizeB2Endpoint(raw) {
+  let endpoint = String(raw ?? "")
+    .trim()
+    .replace(/\/$/, "")
+  if (!endpoint) return ""
+  if (!/^https?:\/\//i.test(endpoint)) endpoint = `https://${endpoint}`
+  return endpoint
+}
+
 /**
  * @param {string} apiDir
  * @param {{ key: string, filePath: string }[]} tasks
@@ -121,7 +131,7 @@ export async function uploadToB2(apiDir, tasks, concurrency = 8) {
   const keyId = vars.B2_KEY_ID?.trim()
   const appKey = vars.B2_APPLICATION_KEY?.trim()
   const bucket = vars.B2_BUCKET?.trim()
-  const endpoint = vars.B2_ENDPOINT?.replace(/\/$/, "").trim()
+  const endpoint = normalizeB2Endpoint(vars.B2_ENDPOINT)
   let region = vars.B2_REGION?.trim()
   if (!region && endpoint) {
     const m = endpoint.match(/s3\.([a-z0-9-]+)\.backblazeb2\.com/i)

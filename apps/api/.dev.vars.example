@@ -21,4 +21,5 @@ MASTER_KEY=replace-with-local-dev-master-key
 # B2_APPLICATION_KEY=
 # B2_BUCKET=gymfolio-media
 # B2_ENDPOINT=https://s3.us-west-004.backblazeb2.com
+# (host-only also works; seed/API prepend https:// if missing)
 # B2_REGION=us-west-004

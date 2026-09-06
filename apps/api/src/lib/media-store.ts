@@ -34,6 +34,14 @@ function createR2Store(env: Bindings): MediaStore | null {
   }
 }
 
+/** Host-only or full URL — aws4fetch needs an absolute URL. */
+function normalizeB2Endpoint(raw: string | undefined): string {
+  let endpoint = (raw ?? "").trim().replace(/\/$/, "")
+  if (!endpoint) return ""
+  if (!/^https?:\/\//i.test(endpoint)) endpoint = `https://${endpoint}`
+  return endpoint
+}
+
 function b2Region(env: Bindings): string {
   if (env.B2_REGION?.trim()) return env.B2_REGION.trim()
   const endpoint = env.B2_ENDPOINT ?? ""
@@ -46,7 +54,7 @@ function createB2Store(env: Bindings): MediaStore | null {
   const keyId = env.B2_KEY_ID?.trim()
   const appKey = env.B2_APPLICATION_KEY?.trim()
   const bucket = env.B2_BUCKET?.trim()
-  const endpoint = env.B2_ENDPOINT?.replace(/\/$/, "").trim()
+  const endpoint = normalizeB2Endpoint(env.B2_ENDPOINT)
   if (!keyId || !appKey || !bucket || !endpoint) return null
 
   const client = new AwsClient({

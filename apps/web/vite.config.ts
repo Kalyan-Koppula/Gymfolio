@@ -11,7 +11,14 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icons.svg'],
+      includeAssets: [
+        'favicon.svg',
+        'icons.svg',
+        'apple-touch-icon.png',
+        'pwa-192.png',
+        'pwa-512.png',
+        'pwa-512-maskable.png',
+      ],
       manifest: {
         name: 'Gymfolio',
         short_name: 'Gymfolio',
@@ -20,12 +27,25 @@ export default defineConfig({
         background_color: '#0a0a0a',
         display: 'standalone',
         start_url: '/',
+        // Android Chrome requires PNG 192 + 512. SVG-only manifests often install with a blank icon.
         icons: [
           {
-            src: 'icons.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
-            purpose: 'any maskable',
+            src: 'pwa-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: 'pwa-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: 'pwa-512-maskable.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
           },
         ],
       },

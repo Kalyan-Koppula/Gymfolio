@@ -298,8 +298,9 @@ pnpm exec wrangler pages project create gymfolio-web-staging
 ```
 
 Build + deploy (includes [`functions/`](../apps/web/functions/) for `/api` proxy).
-**Important:** deploy uses `--branch main` so `gymfolio-web-staging.pages.dev` is updated.
+**Important:** deploy uses `--branch staging` (Pages production branch) so `gymfolio-web-staging.pages.dev` is updated.
 Without that, Wrangler only publishes a hash preview URL and production `/api/*` serves SPA HTML.
+If the project was created with production branch `main`, switch it to `staging` in the dashboard (or via API) once.
 
 ```bash
 pnpm deploy:staging:web

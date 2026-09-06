@@ -59,7 +59,7 @@ WEBAUTHN_RP_NAME = "Gymfolio"
 WEBAUTHN_RP_ID = "gymfolio-web-staging.pages.dev"
 WEBAUTHN_ORIGIN = "https://gymfolio-web-staging.pages.dev"
 # "r2" (default — needs [[env.staging.r2_buckets]]) or "b2" (Backblaze secrets below).
-MEDIA_BACKEND = "r2"
+MEDIA_BACKEND = "b2"
 
 [env.staging.secrets]
 required = ["MASTER_KEY"]
@@ -79,12 +79,12 @@ required = ["MASTER_KEY"]
 [[env.staging.d1_databases]]
 binding = "DB"
 database_name = "gymfolio-d1-staging"
-database_id = "REPLACE_WITH_STAGING_D1_ID"
+database_id = "9698e015-8d6e-40ae-bb64-26c8f12148e1"
 migrations_dir = "../../packages/db/migrations"
 
 [[env.staging.kv_namespaces]]
 binding = "SESSIONS_KV"
-id = "REPLACE_WITH_STAGING_KV_ID"
+id = "7d01415a9b0846f7bca7ed8b36be54eb"
 
 # R2 — used when MEDIA_BACKEND = "r2". Safe to leave when using B2 (unused).
 [[env.staging.r2_buckets]]

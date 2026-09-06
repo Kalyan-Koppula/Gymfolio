@@ -71,16 +71,18 @@ export function loadDevVars(apiDir) {
  * @param {string} r2Bucket
  * @param {{ key: string, filePath: string }[]} tasks
  * @param {(cmd: string) => void} wrangler
+ * @param {boolean} [remote]
  */
-export function uploadToR2(apiDir, r2Bucket, tasks, wrangler) {
+export function uploadToR2(apiDir, r2Bucket, tasks, wrangler, remote = false) {
   if (tasks.length === 0) return
   const mapPath = path.join(apiDir, "../../.cache/free-exercise-db/r2-bulk-upload.json")
   fs.mkdirSync(path.dirname(mapPath), { recursive: true })
   const entries = tasks.map((t) => ({ key: t.key, file: t.filePath }))
   fs.writeFileSync(mapPath, JSON.stringify(entries))
-  console.log(`Bulk uploading ${tasks.length} objects via wrangler r2 bulk put → ${r2Bucket}…`)
+  const scope = remote ? "--remote" : "--local"
+  console.log(`Bulk uploading ${tasks.length} objects via wrangler r2 bulk put → ${r2Bucket} (${remote ? "remote" : "local"})…`)
   wrangler(
-    `r2 bulk put ${r2Bucket} --filename=${mapPath} --local --content-type image/webp --concurrency 50 -y`,
+    `r2 bulk put ${r2Bucket} --filename=${mapPath} ${scope} --content-type image/webp --concurrency 50 -y`,
   )
 }
 
@@ -171,12 +173,13 @@ export async function uploadToB2(apiDir, tasks, concurrency = 8) {
  *   r2Bucket: string
  *   tasks: { key: string, filePath: string }[]
  *   wrangler: (cmd: string) => void
+ *   remote?: boolean
  * }} opts
  */
 export async function uploadMediaObjects(opts) {
   if (opts.backend === "b2") {
     await uploadToB2(opts.apiDir, opts.tasks)
   } else {
-    uploadToR2(opts.apiDir, opts.r2Bucket, opts.tasks, opts.wrangler)
+    uploadToR2(opts.apiDir, opts.r2Bucket, opts.tasks, opts.wrangler, opts.remote === true)
   }
 }

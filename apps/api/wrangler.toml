@@ -58,7 +58,8 @@ WEBAUTHN_RP_NAME = "Gymfolio"
 # Public site origin = Pages free hostname (update if your project name differs):
 WEBAUTHN_RP_ID = "gymfolio-web-staging.pages.dev"
 WEBAUTHN_ORIGIN = "https://gymfolio-web-staging.pages.dev"
-# "r2" (default — needs [[env.staging.r2_buckets]]) or "b2" (Backblaze secrets below).
+# "b2" = Backblaze (no [[env.staging.r2_buckets]] — Wrangler would call R2 API on deploy).
+# "r2" = Cloudflare R2 (uncomment [[env.staging.r2_buckets]] below and enable R2 in the dashboard).
 MEDIA_BACKEND = "b2"
 
 [env.staging.secrets]
@@ -86,10 +87,12 @@ migrations_dir = "../../packages/db/migrations"
 binding = "SESSIONS_KV"
 id = "7d01415a9b0846f7bca7ed8b36be54eb"
 
-# R2 — used when MEDIA_BACKEND = "r2". Safe to leave when using B2 (unused).
-[[env.staging.r2_buckets]]
-binding = "MEDIA"
-bucket_name = "gymfolio-media-staging"
+# No R2 binding on staging — MEDIA_BACKEND = "b2". Wrangler still calls the R2 API
+# for any [[r2_buckets]] entry at deploy time (even if unused in code), which fails
+# if R2 is not enabled on the account. To switch back to R2 later, uncomment:
+# [[env.staging.r2_buckets]]
+# binding = "MEDIA"
+# bucket_name = "gymfolio-media-staging"
 
 [env.staging.triggers]
 crons = ["0 4 * * *"]

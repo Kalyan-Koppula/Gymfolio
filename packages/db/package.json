@@ -8,6 +8,7 @@
   "scripts": {
     "generate": "drizzle-kit generate",
     "seed:media": "node ./scripts/seed-media.mjs",
+    "seed:staging": "node ./scripts/seed-media.mjs --staging",
     "preview:gifs": "node ./scripts/preview-gifs.mjs"
   },
   "dependencies": {

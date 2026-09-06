@@ -21,17 +21,16 @@ pnpm dev
 
 Web: `http://localhost:5173` · API: `http://localhost:8787` (proxied as `/api`).
 
-## Staging
-
-Free Cloudflare hostnames (`*.pages.dev` / `*.workers.dev`), secrets hygiene, branch self-deploy, and smoke checklist:
-
-**[docs/STAGING.md](docs/STAGING.md)**
+## Staging (from your laptop)
 
 ```bash
-cp apps/api/.dev.vars.example apps/api/.dev.vars   # local MASTER_KEY
-# After Cloudflare resources + secrets are set:
-git checkout staging && pnpm deploy:staging
+pnpm staging:secrets      # MASTER_KEY + B2_* → Worker
+pnpm staging:migrate      # remote D1
+pnpm staging:seed:smoke   # 20 exercises → staging D1 + B2
+pnpm staging:deploy       # API Worker + Pages
 ```
+
+Full list: [docs/STAGING.md](docs/STAGING.md) (Local staging commands).
 
 ## Brand
 

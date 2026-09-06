@@ -6,6 +6,37 @@ Follows [Cloudflare Workers best practices](https://developers.cloudflare.com/wo
 
 ---
 
+## Local staging commands (run from your machine)
+
+Prerequisites: `pnpm install`, `wrangler login`, and B2 + `MASTER_KEY` in [`apps/api/.dev.vars`](../apps/api/.dev.vars.example).
+
+```bash
+# 1) Push secrets to the staging Worker (once, or when rotating)
+pnpm staging:secrets
+
+# 2) Apply D1 migrations on remote staging
+pnpm staging:migrate
+
+# 3a) Smoke-seed 20 exercises → staging D1 + Backblaze B2
+pnpm staging:seed:smoke
+
+# 3b) Full catalog (slow / large upload)
+pnpm staging:seed
+
+# 3c) Re-upload already-built WebPs only
+pnpm staging:seed:upload
+
+# 4) Deploy API + Pages from this machine
+pnpm staging:deploy
+# or:
+pnpm staging:deploy:api
+pnpm staging:deploy:web
+```
+
+`staging:seed*` uses `--staging` (remote D1 `gymfolio-d1-staging`, default media backend **b2**).
+
+---
+
 ## 0. Hosting model (free Cloudflare — no purchased domain)
 
 You do **not** need to buy a domain. Use Cloudflare’s free hostnames:
@@ -88,7 +119,7 @@ pnpm seed:media -- --backend b2 --limit 20
 
 `GET /api/health` reports `{ "mediaBackend": "r2" | "b2" }`.
 
-R2 binding can remain in `wrangler.toml` when using B2 (unused). For B2-only, you may omit creating an R2 bucket.
+R2 binding must **not** be present under `[env.staging]` while using B2. Wrangler validates every `[[r2_buckets]]` entry at deploy time and will call the R2 API even if `MEDIA_BACKEND=b2` — that fails with `Please enable R2` (code 10042) if R2 is off on the account. Keep local/dev R2 for Miniflare; staging uses B2 secrets only.
 
 ---
 

@@ -9,6 +9,7 @@
  *   pnpm seed:media -- --media-only   # regenerate WebP thumb + stills only
  *   pnpm seed:media -- --upload-only  # upload cached WebPs (no re-encode)
  *   pnpm seed:media -- --backend b2   # upload to Backblaze B2 instead of R2
+ *   pnpm seed:media -- --staging      # remote staging D1 + B2 (prefer: pnpm seed:staging)
  *   pnpm seed:media -- --skip-upload  # skip object storage upload
  *   pnpm preview:gifs                 # local WebP quality comparison (no upload)
  */
@@ -32,7 +33,8 @@ const CACHE = path.join(ROOT, ".cache/free-exercise-db")
 const FEDB_JSON = path.join(CACHE, "exercises.json")
 const FEDB_IMAGES = path.join(CACHE, "images")
 const API_DIR = path.join(ROOT, "apps/api")
-const R2_BUCKET = "gymfolio-media-dev"
+const R2_BUCKET_LOCAL = "gymfolio-media-dev"
+const R2_BUCKET_STAGING = "gymfolio-media-staging"
 const FEDB_RAW =
   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises"
 const FEDB_DIST =
@@ -45,7 +47,18 @@ const SKIP_UPLOAD = args.includes("--skip-upload") || args.includes("--skip-r2")
 const SKIP_IMAGES = args.includes("--skip-images")
 const MEDIA_ONLY = args.includes("--media-only") || args.includes("--thumbs-only") || args.includes("--gifs-only")
 const UPLOAD_ONLY = args.includes("--upload-only")
-const MEDIA_BACKEND = resolveMediaBackend(API_DIR, process.argv)
+const STAGING = args.includes("--staging") || args.includes("--remote")
+
+// Staging defaults to B2 (matches wrangler [env.staging]); override with --backend.
+const MEDIA_BACKEND = (() => {
+  if (process.argv.includes("--backend")) return resolveMediaBackend(API_DIR, process.argv)
+  if (STAGING) return "b2"
+  return resolveMediaBackend(API_DIR, process.argv)
+})()
+
+const D1_NAME = STAGING ? "gymfolio-d1-staging" : "gymfolio-d1-dev"
+const D1_FLAGS = STAGING ? "--remote --env staging" : "--local"
+const R2_BUCKET = STAGING ? R2_BUCKET_STAGING : R2_BUCKET_LOCAL
 
 function wrangler(cmd, opts = {}) {
   execSync(`pnpm exec wrangler ${cmd}`, {
@@ -92,17 +105,18 @@ async function putMediaPool(tasks) {
     r2Bucket: R2_BUCKET,
     tasks,
     wrangler,
+    remote: STAGING,
   })
 }
 
 function d1Exec(sql) {
   const tmp = path.join(CACHE, "seed-batch.sql")
   fs.writeFileSync(tmp, sql)
-  wrangler(`d1 execute gymfolio-d1-dev --local --file=${tmp}`)
+  wrangler(`d1 execute ${D1_NAME} ${D1_FLAGS} --file=${tmp}`)
 }
 
 function d1Query(sql) {
-  return JSON.parse(wranglerOut(`d1 execute gymfolio-d1-dev --local --command=${JSON.stringify(sql)} --json`))
+  return JSON.parse(wranglerOut(`d1 execute ${D1_NAME} ${D1_FLAGS} --command=${JSON.stringify(sql)} --json`))
 }
 
 async function processExercise(ex) {
@@ -188,7 +202,12 @@ function remapLegacyIds() {
 }
 
 async function main() {
-  console.log(`Exercise media seed (backend=${MEDIA_BACKEND})`)
+  console.log(
+    `Exercise media seed (target=${STAGING ? "staging" : "local"}, d1=${D1_NAME}, backend=${MEDIA_BACKEND})`,
+  )
+  if (STAGING && MEDIA_BACKEND === "b2") {
+    console.log("Tip: B2_* must be in apps/api/.dev.vars (or the environment) for uploads.")
+  }
   await ensureFedbJson()
   const catalog = JSON.parse(fs.readFileSync(FEDB_JSON, "utf8"))
   const list = LIMIT ? catalog.slice(0, LIMIT) : catalog

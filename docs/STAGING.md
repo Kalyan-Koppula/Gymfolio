@@ -13,6 +13,8 @@ Prerequisites: `pnpm install`, `wrangler login`, and B2 + `MASTER_KEY` in [`apps
 ```bash
 # 1) Push secrets to the staging Worker (once, or when rotating)
 pnpm staging:secrets
+# Inspect: staging secret *names* + local .dev.vars values (CF never returns secret values)
+pnpm staging:secrets:print
 
 # 2) Apply D1 migrations on remote staging
 pnpm staging:migrate

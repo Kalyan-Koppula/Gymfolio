@@ -3,7 +3,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
-import { PWA_ICON_REV } from './pwa-icon-rev'
+import { PWA_ICON_REV } from './pwa-icon-rev.js'
 
 function icon(src: string) {
   return `${src}?v=${PWA_ICON_REV}`

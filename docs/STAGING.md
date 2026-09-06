@@ -297,18 +297,21 @@ pnpm exec wrangler pages project create gymfolio-web-staging
 # Or CLI (wrangler pages secret / project settings vary by version) — dashboard is fine.
 ```
 
-Build + deploy (includes [`functions/`](../apps/web/functions/) for `/api` proxy):
+Build + deploy (includes [`functions/`](../apps/web/functions/) for `/api` proxy).
+**Important:** deploy uses `--branch main` so `gymfolio-web-staging.pages.dev` is updated.
+Without that, Wrangler only publishes a hash preview URL and production `/api/*` serves SPA HTML.
 
 ```bash
 pnpm deploy:staging:web
-# from apps/web: build then wrangler pages deploy dist --project-name=gymfolio-web-staging
 ```
 
-Or both API + web:
+Also set Pages env var **before or right after** deploy:
 
-```bash
-pnpm deploy:staging
-```
+| Name | Value | Environment |
+| --- | --- | --- |
+| `GYMFOLIO_API_ORIGIN` | `https://gymfolio-api-staging.<subdomain>.workers.dev` | **Production** (and Preview if needed) |
+
+Dashboard → Workers & Pages → `gymfolio-web-staging` → Settings → Variables.
 
 Open: `https://gymfolio-web-staging.pages.dev`
 
@@ -318,10 +321,11 @@ SPA fallback: [`apps/web/public/_redirects`](../apps/web/public/_redirects).
 
 ```bash
 curl -sS "https://gymfolio-web-staging.pages.dev/api/health"
-# → {"ok":true}
-```
+# → {"ok":true}   (or Worker health JSON)
 
-If you see `GYMFOLIO_API_ORIGIN is not set`, add the Pages variable and redeploy (or wait a minute for var propagation).
+# HTML body = production deploy has no Functions (redeploy with pnpm deploy:staging:web)
+# GYMFOLIO_API_ORIGIN error JSON = Functions work; set the Pages variable above
+```
 
 ---
 

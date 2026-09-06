@@ -1,3 +1,4 @@
-# SPA fallback for Cloudflare Pages — serve index.html for client routes.
-# Does not affect /api/* (those are claimed by the Worker route on the same host).
+# SPA fallback for Cloudflare Pages client routes.
+# /api/* is handled by Pages Functions (functions/api/[[path]].ts), which take
+# precedence over this rewrite when the Functions bundle is on the deployment.
 /*    /index.html   200

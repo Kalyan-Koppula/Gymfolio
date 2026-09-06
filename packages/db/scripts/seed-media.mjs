@@ -10,6 +10,7 @@
  *   pnpm seed:media -- --upload-only  # upload cached WebPs (no re-encode)
  *   pnpm seed:media -- --backend b2   # upload to Backblaze B2 instead of R2
  *   pnpm seed:media -- --staging      # remote staging D1 + B2 (prefer: pnpm seed:staging)
+ *   pnpm seed:media -- --d1-only      # catalog → D1 only (uses local .cache/.../out thumbs; no B2)
  *   pnpm seed:media -- --skip-upload  # skip object storage upload
  *   pnpm preview:gifs                 # local WebP quality comparison (no upload)
  */
@@ -47,6 +48,7 @@ const SKIP_UPLOAD = args.includes("--skip-upload") || args.includes("--skip-r2")
 const SKIP_IMAGES = args.includes("--skip-images")
 const MEDIA_ONLY = args.includes("--media-only") || args.includes("--thumbs-only") || args.includes("--gifs-only")
 const UPLOAD_ONLY = args.includes("--upload-only")
+const D1_ONLY = args.includes("--d1-only") || args.includes("--catalog-only")
 const STAGING = args.includes("--staging") || args.includes("--remote")
 
 // Staging defaults to B2 (matches wrangler [env.staging]); override with --backend.
@@ -109,10 +111,60 @@ async function putMediaPool(tasks) {
   })
 }
 
-function d1Exec(sql) {
-  const tmp = path.join(CACHE, "seed-batch.sql")
-  fs.writeFileSync(tmp, sql)
-  wrangler(`d1 execute ${D1_NAME} ${D1_FLAGS} --file=${tmp}`)
+function sleepMs(ms) {
+  const end = Date.now() + ms
+  while (Date.now() < end) {
+    /* sync backoff between D1 remote bookings */
+  }
+}
+
+function d1Exec(sql, { label = "SQL" } = {}) {
+  const bytes = Buffer.byteLength(sql, "utf8")
+  if (bytes > 95_000) {
+    throw new Error(
+      `D1 batch too large (${bytes} bytes, label=${label}). Split into smaller batches.`,
+    )
+  }
+  // Remote D1 uses a booking queue; large/multiline files often sit on
+  // "you can safely retry" forever. Keep statements small + add --yes.
+  // Unique file per attempt so Wrangler does not reprocess a stale upload.
+  const maxAttempts = STAGING ? 4 : 1
+  let lastErr
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const tmp = path.join(
+      CACHE,
+      `seed-batch-${Date.now()}-${process.pid}-${attempt}.sql`,
+    )
+    fs.writeFileSync(tmp, sql)
+    try {
+      if (STAGING) {
+        console.log(
+          `  D1 ${label} (${bytes} B)${attempt > 1 ? ` attempt ${attempt}/${maxAttempts}` : ""}…`,
+        )
+      }
+      wrangler(`d1 execute ${D1_NAME} ${D1_FLAGS} --yes --file=${tmp}`)
+      try {
+        fs.unlinkSync(tmp)
+      } catch {
+        /* ignore */
+      }
+      return
+    } catch (err) {
+      lastErr = err
+      try {
+        fs.unlinkSync(tmp)
+      } catch {
+        /* ignore */
+      }
+      if (attempt === maxAttempts) break
+      const waitMs = attempt * 2000
+      console.warn(
+        `  D1 ${label} failed (${String(err.message ?? err).slice(0, 120)}); retrying in ${waitMs}ms…`,
+      )
+      sleepMs(waitMs)
+    }
+  }
+  throw lastErr
 }
 
 function d1Query(sql) {
@@ -165,8 +217,65 @@ function buildInsertBatch(rows) {
       (r) =>
         `(${sqlString(r.id)}, ${sqlString(r.name)}, ${sqlString(r.muscleGroupsJson)}, ${sqlString(r.equipmentJson)}, ${sqlString(r.difficulty)}, ${sqlString(r.instructions)}, ${r.hasGif}, ${r.gifR2Key ? sqlString(r.gifR2Key) : "NULL"}, 'not_fetched', NULL)`,
     )
-    .join(",\n")
-  return `INSERT INTO exercises (id, name, muscle_groups_json, equipment_json, difficulty, instructions, has_gif, gif_r2_key, youtube_status, youtube_json) VALUES\n${values};`
+    .join(",")
+  // OR REPLACE so retries / partial prior runs do not hit UNIQUE on exercises.id
+  return `INSERT OR REPLACE INTO exercises (id, name, muscle_groups_json, equipment_json, difficulty, instructions, has_gif, gif_r2_key, youtube_status, youtube_json) VALUES ${values};`
+}
+
+/** Build D1 rows from catalog JSON + local out/{slug}/thumb.webp (no re-encode / no B2). */
+function rowsFromLocalCache(list) {
+  const outRoot = path.join(CACHE, "out")
+  const rows = []
+  let withThumb = 0
+  for (const ex of list) {
+    const slug = fedbIdToSlug(ex.id)
+    const thumbPath = path.join(outRoot, slug, "thumb.webp")
+    const hasGif = fs.existsSync(thumbPath) ? 1 : 0
+    if (hasGif) withThumb++
+    rows.push({
+      id: slug,
+      name: ex.name,
+      muscleGroupsJson: JSON.stringify(mapMuscles(ex.primaryMuscles, ex.secondaryMuscles)),
+      equipmentJson: JSON.stringify(mapEquipment(ex.equipment, ex.name)),
+      difficulty: mapDifficulty(ex.level),
+      instructions: (ex.instructions ?? []).join("\n\n"),
+      hasGif,
+      gifR2Key: hasGif ? thumbR2Key(slug) : null,
+    })
+  }
+  console.log(`D1-only: ${rows.length} exercises, ${withThumb} with local thumb.webp`)
+  return rows
+}
+
+function writeD1Catalog(rows) {
+  console.log("Writing D1 catalog…")
+  d1Exec("DELETE FROM exercises;", { label: "delete exercises" })
+  // Pack by row count and ~80KB so larger staging batches stay under D1 file limits.
+  const TARGET = STAGING ? 30 : 40
+  const MAX_BYTES = 80_000
+  const batches = []
+  let cur = []
+  for (const row of rows) {
+    const next = [...cur, row]
+    const nextSql = buildInsertBatch(next)
+    if (
+      cur.length > 0 &&
+      (cur.length >= TARGET || Buffer.byteLength(nextSql, "utf8") > MAX_BYTES)
+    ) {
+      batches.push(cur)
+      cur = [row]
+      continue
+    }
+    cur = next
+  }
+  if (cur.length) batches.push(cur)
+
+  console.log(`  ${rows.length} rows → ${batches.length} insert batches (target ${TARGET}/batch)`)
+  for (let i = 0; i < batches.length; i++) {
+    d1Exec(buildInsertBatch(batches[i]), {
+      label: `insert ${i + 1}/${batches.length}`,
+    })
+  }
 }
 
 function remapLegacyIds() {
@@ -211,6 +320,15 @@ async function main() {
   await ensureFedbJson()
   const catalog = JSON.parse(fs.readFileSync(FEDB_JSON, "utf8"))
   const list = LIMIT ? catalog.slice(0, LIMIT) : catalog
+
+  if (D1_ONLY) {
+    const rows = rowsFromLocalCache(list)
+    writeD1Catalog(rows)
+    if (!LIMIT) remapLegacyIds()
+    const withMedia = rows.filter((r) => r.hasGif).length
+    console.log(`Done. ${rows.length} exercises in D1, ${withMedia} marked with media keys.`)
+    return
+  }
 
   if (UPLOAD_ONLY) {
     const outRoot = path.join(CACHE, "out")
@@ -301,12 +419,7 @@ async function main() {
     await putMediaPool(allUploads)
   }
 
-  console.log("Writing D1 catalog…")
-  d1Exec("DELETE FROM exercises;")
-  const BATCH = 40
-  for (let i = 0; i < rows.length; i += BATCH) {
-    d1Exec(buildInsertBatch(rows.slice(i, i + BATCH)))
-  }
+  writeD1Catalog(rows)
 
   if (!LIMIT) remapLegacyIds()
 

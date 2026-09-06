@@ -3,23 +3,38 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import { PWA_ICON_REV } from './pwa-icon-rev'
+
+function icon(src: string) {
+  return `${src}?v=${PWA_ICON_REV}`
+}
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
+    {
+      name: 'gymfolio-icon-rev',
+      transformIndexHtml(html) {
+        return html.replaceAll('__ICON_REV__', PWA_ICON_REV)
+      },
+    },
     react(),
     tailwindcss(),
     VitePWA({
+      // Activate new SW ASAP (skipWaiting + clientsClaim). Better for fixing bad caches;
+      // less control than a "Reload?" prompt.
       registerType: 'autoUpdate',
+      injectRegister: 'auto',
       includeAssets: [
         'favicon.svg',
-        'icons.svg',
         'apple-touch-icon.png',
         'pwa-192.png',
         'pwa-512.png',
         'pwa-512-maskable.png',
       ],
       manifest: {
+        // Stable app identity in Chromium; change icons via URL rev, not this id.
+        id: '/',
         name: 'Gymfolio',
         short_name: 'Gymfolio',
         description: 'Workouts, macros, and progress — for you and your family',
@@ -27,22 +42,22 @@ export default defineConfig({
         background_color: '#0a0a0a',
         display: 'standalone',
         start_url: '/',
-        // Android Chrome requires PNG 192 + 512. SVG-only manifests often install with a blank icon.
+        scope: '/',
         icons: [
           {
-            src: 'pwa-192.png',
+            src: icon('pwa-192.png'),
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any',
           },
           {
-            src: 'pwa-512.png',
+            src: icon('pwa-512.png'),
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any',
           },
           {
-            src: 'pwa-512-maskable.png',
+            src: icon('pwa-512-maskable.png'),
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',
@@ -54,8 +69,9 @@ export default defineConfig({
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
         cleanupOutdatedCaches: true,
+        // Don't precache the SW/workbox runtime themselves as navigations.
+        globPatterns: ['**/*.{js,css,html,ico,svg,png,webp,woff2,webmanifest}'],
         runtimeCaching: [
-          // Media files only (images). Must be before the /api catch-all.
           {
             urlPattern: ({ url }) =>
               url.pathname.startsWith('/api/media/exercises/') &&
@@ -64,18 +80,20 @@ export default defineConfig({
                 url.pathname.endsWith('.jpg')),
             handler: 'CacheFirst',
             options: {
-              // New name busts caches that may hold SPA HTML from broken /api deploys.
               cacheName: 'exercise-media-v2',
               expiration: { maxEntries: 400, maxAgeSeconds: 60 * 60 * 24 * 30 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },
-          // All other /api/* — network only (never cache JSON/HTML mistakes).
           {
             urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
             handler: 'NetworkOnly',
           },
         ],
+      },
+      devOptions: {
+        // Keep SW off in `vite` — avoids stale-dev cache confusion.
+        enabled: false,
       },
     }),
   ],
@@ -86,8 +104,6 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      // Same-origin in dev, avoiding CORS entirely — mirrors how the Worker sits behind
-      // the same custom domain as the static site in production (architecture §10).
       '/api': {
         target: 'http://localhost:8787',
         changeOrigin: true,

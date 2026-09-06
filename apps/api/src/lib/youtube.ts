@@ -1,4 +1,5 @@
-const QUOTA_CAP = 80 // self-imposed daily unit cap (architecture §4)
+const QUOTA_CAP = 9_500 // keep headroom under YouTube's ~10k units/day default
+
 
 export async function getYoutubeUnitsUsed(kv: KVNamespace): Promise<number> {
   const day = new Date().toISOString().slice(0, 10)

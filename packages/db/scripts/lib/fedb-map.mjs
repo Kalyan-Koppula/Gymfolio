@@ -117,5 +117,12 @@ export function mapDifficulty(level) {
 }
 
 export function sqlString(value) {
-  return `'${String(value).replace(/'/g, "''")}'`
+  // Flatten newlines — wrangler `d1 execute --remote --file` often stalls/retries
+  // on large SQL files that contain multiline string literals.
+  const flat = String(value)
+    .replace(/\r\n/g, "\n")
+    .replace(/\n+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+  return `'${flat.replace(/'/g, "''")}'`
 }

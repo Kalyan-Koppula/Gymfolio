@@ -20,6 +20,7 @@
     "staging:seed": "pnpm --filter db seed:media -- --staging",
     "staging:seed:smoke": "pnpm --filter db seed:media -- --staging --limit 20",
     "staging:seed:upload": "pnpm --filter db seed:media -- --staging --upload-only",
+    "staging:seed:d1": "pnpm --filter db seed:media -- --staging --d1-only",
     "staging:deploy:web": "node ./scripts/staging-deploy-web.mjs",
     "staging:deploy:api": "pnpm --filter api deploy:staging",
     "staging:deploy": "pnpm staging:deploy:api && pnpm staging:deploy:web",

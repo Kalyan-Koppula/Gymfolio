@@ -360,32 +360,51 @@ Checklist before first push to a shared remote:
 - [ ] No `MASTER_KEY` in `wrangler.toml`
 - [ ] Staging D1/KV IDs filled in `wrangler.toml` and committed
 
-### B. Pages: connect Git for automatic web deploys
+### B. Pages: Connect-to-Git (recommended for web)
 
-1. Dashboard → Workers & Pages → `gymfolio-web-staging` → **Settings** → **Builds & deployments** (or create the project via “Connect to Git”).
-2. Connect GitHub/GitLab → select the Gymfolio repo.
-3. Configure:
+Connect-to-Git only uploads the **build output directory**. A Vite-only build
+ships SPA files and `/api/*` becomes HTML via `_redirects`. The fix is
+[`pnpm pages:build`](../scripts/cf-pages-build.mjs): Vite build **plus** compile
+`apps/web/functions` → `apps/web/dist/_worker.js` (+ `_routes.json`).
+
+1. Dashboard → Workers & Pages → `gymfolio-web-staging` → **Settings** → **Builds**
+   (or create via **Connect to Git**).
+2. Connect the Gymfolio repo. Use:
 
 | Setting | Value |
 | --- | --- |
-| Production branch | `staging` (or `main`) |
-| Build command | `pnpm install && pnpm --filter web build` |
+| Production branch | `staging` |
+| Root directory | *(empty / repo root)* |
+| Build command | `corepack enable && pnpm install && pnpm pages:build` |
 | Build output directory | `apps/web/dist` |
-| Root directory | `/` (monorepo root) |
+| Deploy command | *(leave default / empty)* |
 
-4. Set Pages env var `GYMFOLIO_API_ORIGIN` on Production (same as §8).
-5. Ensure the Pages build can see `functions`: Wrangler/Pages must deploy from a layout that includes [`apps/web/functions`](../apps/web/functions). If Connect-to-Git only uploads `apps/web/dist`, **manual** `pnpm deploy:staging:web` (from `apps/web`, which picks up sibling `functions/`) is more reliable for the proxy. Prefer CLI deploy for web until Git build + functions path is confirmed in your dashboard.
+3. **Environment variables** (Pages → Settings → Variables) — Production **and** Preview:
 
-### C. API Worker does not auto-deploy from Pages Git
+| Name | Value |
+| --- | --- |
+| `GYMFOLIO_API_ORIGIN` | `https://gymfolio-api-staging.<your-subdomain>.workers.dev` |
 
-Workers are separate. After merging to your staging branch:
+4. After the first Connect-to-Git deploy, verify:
 
 ```bash
-git checkout staging && git pull
-pnpm deploy:staging:api
+curl -sS https://gymfolio-web-staging.pages.dev/api/health
+# expect JSON from the Worker (not <!doctype html>)
 ```
 
-Or add a GitHub Action (see §13) that runs `wrangler deploy --env staging` on push to `staging`.
+5. Optional: set `NODE_VERSION=22` under Pages build env if the builder needs it.
+
+**Do not** use build command `pnpm --filter web build` alone — that omits `_worker.js`.
+
+### C. API Worker (not deployed by Pages Git)
+
+Pages Connect-to-Git does **not** deploy Workers. Use CLI or GitHub Actions:
+
+```bash
+pnpm staging:deploy:api
+```
+
+Workflow: [`.github/workflows/deploy-staging.yml`](../.github/workflows/deploy-staging.yml) deploys the API on push to `staging`. Keep Worker secrets out of Git (`pnpm staging:secrets`).
 
 ### D. Preview deployments (optional)
 
@@ -419,33 +438,27 @@ pnpm dev
 
 ---
 
-## 12. CI sketch (optional — deploy on push to `staging`)
+## 12. CI split: Pages Git + Actions for API
 
-1. API token with Workers, D1, Pages edit (least privilege).
-2. GitHub secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
-3. On push to `staging`:
+| Surface | How it deploys |
+| --- | --- |
+| Web (Pages + `/api` proxy) | **Connect-to-Git** with `pnpm pages:build` → `apps/web/dist` includes `_worker.js` |
+| API Worker | **GitHub Action** or `pnpm staging:deploy:api` |
 
-```yaml
-# sketch — .github/workflows/deploy-staging.yml
-on:
-  push:
-    branches: [staging]
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: pnpm }
-      - run: pnpm install
-      - run: pnpm deploy:staging
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-```
+### Pages (Connect-to-Git)
 
-4. Set `MASTER_KEY` once via CLI — do **not** put values in workflow YAML.
+See §9B. Build must be `pnpm pages:build`, not Vite-only.
+
+### API (GitHub Action)
+
+[`.github/workflows/deploy-staging.yml`](../.github/workflows/deploy-staging.yml) on push to `staging`:
+
+- `pnpm staging:deploy:api`
+- Optional smoke via repo variable `WORKER_HEALTH_URL`
+
+GitHub secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
+
+One-time outside CI: `pnpm staging:secrets` + Pages var `GYMFOLIO_API_ORIGIN`.
 
 ---
 

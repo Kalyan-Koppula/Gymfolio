@@ -23,6 +23,7 @@
     "staging:deploy:web": "node ./scripts/staging-deploy-web.mjs",
     "staging:deploy:api": "pnpm --filter api deploy:staging",
     "staging:deploy": "pnpm staging:deploy:api && pnpm staging:deploy:web",
+    "pages:build": "node ./scripts/cf-pages-build.mjs",
     "deploy:staging": "pnpm staging:deploy",
     "deploy:staging:api": "pnpm staging:deploy:api",
     "deploy:staging:web": "pnpm staging:deploy:web",

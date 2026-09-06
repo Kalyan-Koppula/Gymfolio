@@ -1,4 +1,3 @@
-# SPA fallback for Cloudflare Pages client routes.
-# /api/* is handled by Pages Functions (functions/api/[[path]].ts), which take
-# precedence over this rewrite when the Functions bundle is on the deployment.
+# SPA fallback. Pages Functions handle /api/* when the Functions bundle is present.
+# See public/_routes.json (include: /api/*).
 /*    /index.html   200

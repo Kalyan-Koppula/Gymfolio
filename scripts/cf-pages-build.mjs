@@ -112,8 +112,8 @@ if (!JSON.stringify(routes).includes("/api")) {
 const workerBytes = fs.statSync(path.join(DIST, "_worker.js")).size
 console.log(`→ dist/_worker.js (${workerBytes} bytes) ready for Connect-to-Git`)
 
-# SPA shell for missing paths. Do NOT use public/_redirects `/* /index.html 200` —
-# Advanced Mode flags that as an infinite loop and ignores it.
+// # SPA shell for missing paths. Do NOT use public/_redirects `/* /index.html 200` —
+// # Advanced Mode flags that as an infinite loop and ignores it.
 const indexHtml = path.join(DIST, "index.html")
 if (fs.existsSync(indexHtml)) {
   fs.copyFileSync(indexHtml, path.join(DIST, "404.html"))

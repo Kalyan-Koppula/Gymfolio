@@ -39,19 +39,29 @@ export function ExerciseDetail() {
 
   // YouTube lazy-fetch: at most once per exercise id (module-level gate in ensureExerciseYoutube).
   // Depend only on id + status primitive — never on `base` object or `refresh`.
+  const [youtubeFetching, setYoutubeFetching] = React.useState(false)
+  const [youtubeSkip, setYoutubeSkip] = React.useState<string | null>(null)
+
   React.useEffect(() => {
     if (!id || !youtubeStatus) return
     if (youtubeStatus === "ready" || youtubeStatus === "pending") return
     let cancelled = false
+    setYoutubeFetching(true)
+    setYoutubeSkip(null)
     void ensureExerciseYoutube(id)
-      .then((updated) => {
-        if (!cancelled && updated) {
-          setExercise(updated)
-          applyExercise(updated)
+      .then((result) => {
+        if (cancelled) return
+        if (result?.exercise) {
+          setExercise(result.exercise)
+          applyExercise(result.exercise)
         }
+        if (result?.skipped) setYoutubeSkip(result.skipped)
       })
       .catch(() => {
         // Leave not_fetched — photo reference still works; do not retry (quota).
+      })
+      .finally(() => {
+        if (!cancelled) setYoutubeFetching(false)
       })
     return () => {
       cancelled = true
@@ -104,6 +114,9 @@ export function ExerciseDetail() {
                 targetSets: 3,
                 targetReps: "10",
                 orderIndex: d.exercises.length,
+                trackWeight: !shown.equipment.every(
+                  (e) => e === "bodyweight" || e === "resistance-band" || e === "pull-up-bar",
+                ),
               },
             ],
           },
@@ -128,7 +141,7 @@ export function ExerciseDetail() {
     <div>
       <TopBar title={shown.name} back />
       <div className="space-y-5 px-4 py-4 pb-24">
-        <ExerciseMediaPlayer hasGif={shown.hasGif} exerciseId={shown.id} />
+        <ExerciseMediaPlayer hasGif={shown.hasGif} exerciseId={shown.id} media={shown.media} />
 
         <div className="flex flex-wrap gap-1.5">
           {shown.muscleGroups.map((m) => (
@@ -156,7 +169,12 @@ export function ExerciseDetail() {
             <MonitorPlay className="size-4" /> Reference video
           </h3>
           <YoutubeState
-            status={shown.youtubeStatus}
+            status={
+              youtubeFetching || youtubeStatus === "pending"
+                ? "pending"
+                : (shown.youtubeStatus ?? "not_fetched")
+            }
+            skipReason={youtubeSkip}
             videoId={shown.youtube?.videoId}
             title={shown.youtube?.title}
             channel={shown.youtube?.channel}
@@ -190,12 +208,14 @@ export function ExerciseDetail() {
 
 function YoutubeState({
   status,
+  skipReason,
   videoId,
   title,
   channel,
   views,
 }: {
   status: "not_fetched" | "pending" | "ready"
+  skipReason?: string | null
   videoId?: string
   title?: string
   channel?: string
@@ -224,6 +244,15 @@ function YoutubeState({
     )
   }
 
+  const unavailableCopy =
+    skipReason === "no_api_key"
+      ? "Set YOUTUBE_API_KEY on the API worker to enable lazy YouTube lookup."
+      : skipReason === "quota_cap"
+        ? "YouTube daily quota is used up — try again tomorrow."
+        : skipReason === "not_found"
+          ? "No matching reference video was found for this exercise."
+          : "A reference video wasn’t available for this exercise."
+
   return (
     <Card className="border-dashed py-6">
       <CardContent className="flex flex-col items-center gap-2 text-center">
@@ -237,9 +266,7 @@ function YoutubeState({
           <>
             <MonitorPlay className="size-6 text-muted-foreground" />
             <p className="text-sm font-medium">Video not available yet</p>
-            <p className="text-xs text-muted-foreground">
-              Set YOUTUBE_API_KEY on the API worker to enable lazy YouTube lookup.
-            </p>
+            <p className="text-xs text-muted-foreground">{unavailableCopy}</p>
           </>
         )}
       </CardContent>

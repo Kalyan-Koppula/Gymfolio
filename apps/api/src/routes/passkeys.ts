@@ -1,5 +1,6 @@
 import { Hono } from "hono"
-import { and, eq, isNull } from "drizzle-orm"
+import { getCookie } from "hono/cookie"
+import { and, eq, inArray, isNull } from "drizzle-orm"
 import {
   generateRegistrationOptions,
   verifyRegistrationResponse,
@@ -11,7 +12,7 @@ import { isoBase64URL } from "@simplewebauthn/server/helpers"
 import { credentials, users } from "db"
 import type { Role } from "shared"
 import { getDb } from "../lib/db.ts"
-import { createSession } from "../lib/session.ts"
+import { createOrRefreshSession, SESSION_COOKIE } from "../lib/session.ts"
 import { setSessionCookie, serializeUser } from "../lib/session-response.ts"
 import { webAuthnConfig, storeChallenge, consumeChallenge } from "../lib/webauthn.ts"
 import { requireAuth } from "../middleware/auth.ts"
@@ -102,7 +103,29 @@ route.post("/register-verify", requireAuth, async (c) => {
 
 route.post("/login-options", async (c) => {
   const { rpID } = webAuthnConfig(c.env)
-  const options = await generateAuthenticationOptions({ rpID, userVerification: "preferred" })
+  const body = await c.req.json().catch(() => null)
+  const preferredIds = Array.isArray(body?.allowCredentialIds)
+    ? (body.allowCredentialIds as unknown[]).filter((id): id is string => typeof id === "string" && id.length > 0)
+    : []
+
+  /** @type {{ id: string, transports?: AuthenticatorTransportFuture[] }[]} */
+  let allowCredentials: { id: string; transports?: ("ble" | "hybrid" | "internal" | "nfc" | "usb")[] }[] | undefined
+  if (preferredIds.length > 0) {
+    const db = getDb(c.env.DB)
+    const rows = await db.select().from(credentials).where(inArray(credentials.credentialId, preferredIds))
+    allowCredentials = rows.map((cred) => ({
+      id: cred.credentialId,
+      transports: parseTransports(cred.transports),
+    }))
+    // If none matched DB, fall through to empty allowCredentials (account picker).
+    if (allowCredentials.length === 0) allowCredentials = undefined
+  }
+
+  const options = await generateAuthenticationOptions({
+    rpID,
+    userVerification: "preferred",
+    ...(allowCredentials ? { allowCredentials } : {}),
+  })
   const flowId = await storeChallenge(c.env.SESSIONS_KV, options.challenge)
   return c.json({ flowId, options })
 })
@@ -152,7 +175,18 @@ route.post("/login-verify", async (c) => {
     .set({ counter: verification.authenticationInfo.newCounter, lastUsedAt: Date.now() })
     .where(eq(credentials.id, cred.id))
 
-  const { sessionId, expiresAt } = await createSession(db, c.env.SESSIONS_KV, user.id, user.tenantId, user.role as Role)
+  const deviceKey = typeof body.deviceKey === "string" ? body.deviceKey : undefined
+  const { sessionId, expiresAt } = await createOrRefreshSession(
+    db,
+    c.env.SESSIONS_KV,
+    user.id,
+    user.tenantId,
+    user.role as Role,
+    {
+      deviceKey,
+      currentSessionId: getCookie(c, SESSION_COOKIE),
+    },
+  )
   setSessionCookie(c, sessionId, expiresAt)
 
   return c.json({ user: serializeUser(user) })

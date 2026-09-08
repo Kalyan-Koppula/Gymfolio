@@ -21,6 +21,14 @@ export const ExerciseYoutubeSchema = z.object({
   views: z.string(),
 })
 
+export const ExerciseMediaSchema = z.object({
+  /** Object key e.g. exercises/slug/thumb.<hash>.webp */
+  thumb: z.string().optional(),
+  start: z.string().optional(),
+  end: z.string().optional(),
+})
+export type ExerciseMedia = z.infer<typeof ExerciseMediaSchema>
+
 export const ExerciseSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -29,6 +37,8 @@ export const ExerciseSchema = z.object({
   difficulty: ExerciseDifficultySchema,
   instructions: z.string(),
   hasGif: z.boolean(),
+  /** Content-addressed media object keys when seeded. */
+  media: ExerciseMediaSchema.optional(),
   youtubeStatus: z.enum(["not_fetched", "pending", "ready"]),
   youtube: ExerciseYoutubeSchema.optional(),
 })

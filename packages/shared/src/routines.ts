@@ -15,6 +15,11 @@ export const RoutineExerciseSchema = z.object({
   targetReps: z.string(),
   /** Position within the day; omitted on older saves — backfilled from array index. */
   orderIndex: z.number().int().nonnegative().optional(),
+  /**
+   * When false, the workout UI hides the weight stepper and logs 0 kg (bodyweight / band /
+   * machine-assisted work). Defaults to true when omitted (older routines).
+   */
+  trackWeight: z.boolean().optional(),
 })
 export type RoutineExercise = z.infer<typeof RoutineExerciseSchema>
 

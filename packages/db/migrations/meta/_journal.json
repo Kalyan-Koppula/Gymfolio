@@ -64,6 +64,27 @@
       "when": 1787668900000,
       "tag": "0008_log_upsert_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1787669000000,
+      "tag": "0009_skipped_sets",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1787669100000,
+      "tag": "0010_media_json",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1787669200000,
+      "tag": "0011_session_device_key",
+      "breakpoints": true
     }
   ]
 }

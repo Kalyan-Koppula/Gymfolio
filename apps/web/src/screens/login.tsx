@@ -1,21 +1,26 @@
 import * as React from "react"
-import { useNavigate } from "react-router-dom"
+import { Navigate, useNavigate } from "react-router-dom"
 import { startAuthentication, browserSupportsWebAuthn } from "@simplewebauthn/browser"
-import { Dumbbell, Eye, EyeOff, Fingerprint, Loader2 } from "lucide-react"
+import { Dumbbell, Eye, EyeOff, Fingerprint, Loader2, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle } from "lucide-react"
 import { APP_NAME } from "@/lib/brand"
 import { login, passkeyLoginOptions, passkeyLoginVerify, ApiError } from "@/lib/api-client"
 import { useOnlineStatus } from "@/hooks/use-online-status"
 import { useSession } from "@/contexts/session-context"
+import { getOrCreateDeviceKey } from "@/lib/device-key"
+import {
+  clearPreferredPasskey,
+  getPreferredPasskey,
+  rememberPasskey,
+} from "@/lib/passkey-preference"
 
 export function Login() {
   const navigate = useNavigate()
   const online = useOnlineStatus()
-  const { setUser } = useSession()
+  const { user, loading, setUser } = useSession()
   const passkeySupported = React.useMemo(() => browserSupportsWebAuthn(), [])
 
   const [showPasswordForm, setShowPasswordForm] = React.useState(!passkeySupported)
@@ -25,7 +30,10 @@ export function Login() {
   const [username, setUsername] = React.useState("")
   const [password, setPassword] = React.useState("")
 
-  async function handlePasskeySignIn() {
+  if (!loading && user) {
+    return <Navigate to="/today" replace />
+  }
+  async function handlePasskeySignIn(opts?: { pickAccount?: boolean }) {
     if (!online) {
       setStatus("error")
       setErrorMessage("You're offline — check your connection and try again.")
@@ -33,9 +41,14 @@ export function Login() {
     }
     setStatus("checking")
     try {
-      const { flowId, options } = await passkeyLoginOptions()
+      const preferred = opts?.pickAccount ? null : getPreferredPasskey()
+      if (opts?.pickAccount) clearPreferredPasskey()
+      const { flowId, options } = await passkeyLoginOptions({
+        allowCredentialIds: preferred ? [preferred.credentialId] : [],
+      })
       const response = await startAuthentication({ optionsJSON: options })
-      const { user } = await passkeyLoginVerify(flowId, response)
+      const { user } = await passkeyLoginVerify(flowId, response, getOrCreateDeviceKey())
+      rememberPasskey(response.id, preferred?.transports)
       setUser(user)
       navigate("/today")
     } catch (err) {
@@ -59,7 +72,7 @@ export function Login() {
 
     setStatus("checking")
     try {
-      const { user } = await login({ username, password })
+      const { user } = await login({ username, password, deviceKey: getOrCreateDeviceKey() })
       setUser(user)
       navigate("/today")
     } catch (err) {
@@ -96,7 +109,7 @@ export function Login() {
         {passkeySupported && (
           <div className="space-y-4">
             <Button
-              onClick={handlePasskeySignIn}
+              onClick={() => handlePasskeySignIn()}
               disabled={status === "checking"}
               className="h-12 w-full text-base"
             >
@@ -107,6 +120,16 @@ export function Login() {
               )}
               Sign in with Face ID / Touch ID
             </Button>
+            {getPreferredPasskey() && (
+              <button
+                type="button"
+                onClick={() => handlePasskeySignIn({ pickAccount: true })}
+                disabled={status === "checking"}
+                className="w-full text-center text-xs text-muted-foreground underline"
+              >
+                Use a different passkey
+              </button>
+            )}
             {!showPasswordForm && (
               <button
                 type="button"

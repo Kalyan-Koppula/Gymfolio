@@ -11,6 +11,8 @@ export const WorkoutLogSetSchema = z.object({
   setIndex: z.number().int().nonnegative(),
   actualReps: z.number().int().nonnegative(),
   actualWeightKg: z.number().nonnegative(),
+  /** True when the athlete skipped this set (still counts toward session progress). */
+  skipped: z.boolean().optional(),
   updatedAt: z.number(),
 })
 export type WorkoutLogSet = z.infer<typeof WorkoutLogSetSchema>
@@ -51,6 +53,7 @@ export const LogWorkoutSetInputSchema = z.object({
   setIndex: z.number().int().nonnegative(),
   actualReps: z.number().int().nonnegative(),
   actualWeightKg: z.number().nonnegative(),
+  skipped: z.boolean().optional(),
 })
 export type LogWorkoutSetInput = z.infer<typeof LogWorkoutSetInputSchema>
 

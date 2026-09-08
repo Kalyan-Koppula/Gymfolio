@@ -26,8 +26,11 @@ pnpm staging:seed:smoke
 pnpm staging:seed
 
 # 3c) If local .cache/free-exercise-db/out already has WebPs (processing done):
-pnpm staging:seed:upload   # upload cached WebPs → B2 only
-pnpm staging:seed:d1       # write exercise catalog → remote D1 only
+pnpm staging:seed:upload   # hash + upload WebPs → B2, update D1 media keys
+pnpm staging:seed:d1       # full catalog → remote D1 (includes hashed media_json)
+
+# Media object keys are content-addressed: exercises/{slug}/thumb.<hash>.webp
+# Run staging:migrate first so exercises.media_json exists.
 
 # Broken thumbs usually mean D1 has has_gif=1 but B2 is missing the object
 # (d1-only without a completed upload), or upload never finished. Run 3c both steps.
@@ -39,6 +42,32 @@ pnpm staging:deploy:web
 ```
 
 `staging:seed*` uses `--staging` (remote D1 `gymfolio-d1-staging`, default media backend **b2**).
+
+### Faster media (Cloudflare edge cache + content hashes)
+
+Object keys are **content-addressed** after seed:
+
+`exercises/{slug}/thumb.<16-hex>.webp` (also `start` / `end`)
+
+D1 stores keys in `media_json` (+ `gif_r2_key` for the thumb). Clients load those URLs, so CDN `immutable` caching is safe — a re-encode produces a new hash/URL.
+
+Thumbs are slow when every request goes **Pages → Worker → B2**. After deploy:
+
+1. **API** caches media in the Workers Cache API (`X-Media-Cache: HIT` on repeats).
+2. Set Pages build env **`VITE_MEDIA_ORIGIN`** to the Worker origin (no trailing slash), e.g.  
+   `https://gymfolio-api-staging.<subdomain>.workers.dev`  
+   so the browser loads `/api/media/...` **directly from the Worker** (skips the Pages proxy hop).
+
+Reseed hashed objects (local WebPs already built):
+
+```bash
+pnpm staging:migrate
+pnpm staging:seed:upload
+pnpm staging:seed:d1
+pnpm staging:deploy:api
+```
+
+Redeploy web after setting `VITE_MEDIA_ORIGIN`.
 
 ---
 

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { execSync } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
@@ -21,6 +22,34 @@ export const THUMB_SIZE = THUMB_WIDTH
 export const WEBP_QUALITY = 70
 export const STILL_QUALITY = 75
 export const FRAME_DELAY_MS = 900
+
+/** Short content hash for object keys (16 hex ≈ 64 bits). */
+export function contentHash(buf) {
+  return createHash("sha256").update(buf).digest("hex").slice(0, 16)
+}
+
+/**
+ * Content-addressed object key.
+ * e.g. exercises/barbell-squat/thumb.a1b2c3d4e5f60718.webp
+ */
+export function hashedMediaKey(slug, kind, hash) {
+  return `exercises/${slug}/${kind}.${hash}.webp`
+}
+
+/** @deprecated Prefer hashedMediaKey after hashing file bytes. */
+export function startWebpKey(slug) {
+  return `exercises/${slug}/start.webp`
+}
+
+/** @deprecated Prefer hashedMediaKey after hashing file bytes. */
+export function endWebpKey(slug) {
+  return `exercises/${slug}/end.webp`
+}
+
+/** @deprecated Prefer hashedMediaKey after hashing file bytes. */
+export function thumbR2Key(slug) {
+  return `exercises/${slug}/thumb.webp`
+}
 
 export function ffmpegAvailable() {
   try {
@@ -76,15 +105,6 @@ export function buildStillWebp(imageBuf, outPath, opts = {}) {
   return fs.readFileSync(outPath)
 }
 
-/** R2 keys for still WebP assets. */
-export function startWebpKey(slug) {
-  return `exercises/${slug}/start.webp`
-}
-
-export function endWebpKey(slug) {
-  return `exercises/${slug}/end.webp`
-}
-
 /**
  * Animated thumb WebP — same 850:567 canvas for both frames (img2webp requires matching size).
  */
@@ -115,9 +135,4 @@ export function buildThumbWebp(startBuf, endBuf, outPath, opts = {}) {
 
   fs.rmSync(tmp, { recursive: true, force: true })
   return fs.readFileSync(outPath)
-}
-
-/** R2 object key for the animated exercise thumb. */
-export function thumbR2Key(slug) {
-  return `exercises/${slug}/thumb.webp`
 }

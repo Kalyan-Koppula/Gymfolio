@@ -1,5 +1,5 @@
 import { Hono } from "hono"
-import { and, desc, eq, gte, inArray, ne } from "drizzle-orm"
+import { and, desc, eq, gte, inArray, ne, sql } from "drizzle-orm"
 import { exercises, workoutLogs, workoutLogSets } from "db"
 import {
   StartWorkoutInputSchema,
@@ -50,6 +50,7 @@ function toSet(row: typeof workoutLogSets.$inferSelect): WorkoutLogSet {
     setIndex: row.setIndex,
     actualReps: row.actualReps,
     actualWeightKg: row.actualWeightKg,
+    skipped: row.skipped === 1,
     updatedAt: row.updatedAt,
   }
 }
@@ -359,6 +360,7 @@ route.post("/:id/sets", async (c) => {
       .set({
         actualReps: body.data.actualReps,
         actualWeightKg: body.data.actualWeightKg,
+        skipped: body.data.skipped ? 1 : 0,
         updatedAt: now,
       })
       .where(eq(workoutLogSets.id, existingSet.id))
@@ -367,6 +369,7 @@ route.post("/:id/sets", async (c) => {
         ...existingSet,
         actualReps: body.data.actualReps,
         actualWeightKg: body.data.actualWeightKg,
+        skipped: body.data.skipped ? 1 : 0,
         updatedAt: now,
       }),
       setsCompleted: log.setsCompleted,
@@ -381,6 +384,7 @@ route.post("/:id/sets", async (c) => {
     setIndex: body.data.setIndex,
     actualReps: body.data.actualReps,
     actualWeightKg: body.data.actualWeightKg,
+    skipped: body.data.skipped ? 1 : 0,
     updatedAt: now,
   })
 
@@ -399,6 +403,7 @@ route.post("/:id/sets", async (c) => {
         setIndex: body.data.setIndex,
         actualReps: body.data.actualReps,
         actualWeightKg: body.data.actualWeightKg,
+        skipped: body.data.skipped ? 1 : 0,
         updatedAt: now,
       }),
       setsCompleted,
@@ -642,6 +647,7 @@ route.get("/last-performance", async (c) => {
         eq(workoutLogs.userId, userId),
         eq(workoutLogs.tenantId, tenantId),
         eq(workoutLogs.status, "completed"),
+        sql`coalesce(${workoutLogSets.skipped}, 0) = 0`,
       ),
     )
     .orderBy(desc(workoutLogs.completedAt), desc(workoutLogSets.updatedAt))
@@ -704,6 +710,7 @@ route.get("/progress/exercise", async (c) => {
         eq(workoutLogs.tenantId, tenantId),
         eq(workoutLogs.status, "completed"),
         eq(workoutLogSets.exerciseId, exerciseId),
+        sql`coalesce(${workoutLogSets.skipped}, 0) = 0`,
       ),
     )
     .orderBy(desc(workoutLogs.completedAt))
@@ -751,6 +758,7 @@ route.get("/progress/exercise", async (c) => {
 /**
  * Sets per muscle group over a lookback window.
  * Each set counts toward EVERY muscle group on the exercise (muscle_groups_json).
+ * Skipped sets are excluded. Includes completed + in-progress sessions (not skipped days).
  * Query: GET /api/workouts/progress/muscle-volume?days=7|30|90|365|all
  */
 route.get("/progress/muscle-volume", async (c) => {
@@ -773,28 +781,35 @@ route.get("/progress/muscle-volume", async (c) => {
   const conditions = [
     eq(workoutLogs.userId, userId),
     eq(workoutLogs.tenantId, tenantId),
-    eq(workoutLogs.status, "completed"),
+    ne(workoutLogs.status, "skipped"),
+    // Prefer column when migrated; treat missing/0 as not skipped.
+    sql`coalesce(${workoutLogSets.skipped}, 0) = 0`,
   ]
   if (sinceStr) conditions.push(gte(workoutLogs.date, sinceStr))
 
   const rows = await db
     .select({
+      exerciseId: workoutLogSets.exerciseId,
       muscleGroupsJson: exercises.muscleGroupsJson,
     })
     .from(workoutLogSets)
     .innerJoin(workoutLogs, eq(workoutLogSets.workoutLogId, workoutLogs.id))
-    .innerJoin(exercises, eq(workoutLogSets.exerciseId, exercises.id))
+    .leftJoin(exercises, eq(workoutLogSets.exerciseId, exercises.id))
     .where(and(...conditions))
 
   const counts = new Map<string, number>()
   for (const row of rows) {
     let groups: string[] = []
-    try {
-      groups = JSON.parse(row.muscleGroupsJson) as string[]
-    } catch {
-      continue
+    if (row.muscleGroupsJson) {
+      try {
+        groups = JSON.parse(row.muscleGroupsJson) as string[]
+      } catch {
+        continue
+      }
     }
+    if (!Array.isArray(groups) || groups.length === 0) continue
     for (const g of groups) {
+      if (typeof g !== "string" || !g) continue
       counts.set(g, (counts.get(g) ?? 0) + 1)
     }
   }

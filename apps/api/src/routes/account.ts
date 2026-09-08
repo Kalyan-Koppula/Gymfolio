@@ -12,11 +12,10 @@ import type { AppEnv } from "../types.ts"
 const route = new Hono<AppEnv>()
 route.use(requireAuth)
 
-function formatLastActive(expiresAt: number, isCurrent: boolean): string {
+function formatLastActive(lastActiveAt: number | null | undefined, isCurrent: boolean): string {
   if (isCurrent) return "Active now"
-  // Sessions are created with a 30-day TTL; approximate last activity as expiry - 30d.
-  const createdApprox = expiresAt - 30 * 24 * 60 * 60 * 1000
-  const agoMs = Date.now() - createdApprox
+  if (lastActiveAt == null) return "Unknown"
+  const agoMs = Date.now() - lastActiveAt
   const hours = Math.floor(agoMs / (60 * 60 * 1000))
   if (hours < 1) return "Just now"
   if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`
@@ -33,13 +32,13 @@ route.get("/sessions", async (c) => {
     .select()
     .from(sessions)
     .where(eq(sessions.userId, userId))
-    .orderBy(desc(sessions.expiresAt))
+    .orderBy(desc(sessions.lastActiveAt), desc(sessions.expiresAt))
 
   const list = rows
     .filter((r) => r.expiresAt > Date.now())
     .map((r) => ({
       id: r.id,
-      lastActive: formatLastActive(r.expiresAt, r.id === currentId),
+      lastActive: formatLastActive(r.lastActiveAt, r.id === currentId),
       current: r.id === currentId,
       expiresAt: r.expiresAt,
     }))

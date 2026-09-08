@@ -1,6 +1,12 @@
 /**
  * Serves exercise media bytes from the configured store (R2 or Backblaze B2).
- * Without an object, returns 404 — the client treats missing media as a calm placeholder.
+ *
+ * Preferred keys are content-addressed:
+ *   exercises/{slug}/{thumb|start|end}.{16-hex}.webp
+ * Legacy unhashed keys still work for older objects.
+ *
+ * Responses are stored in the Cloudflare Cache API so repeat requests are served from
+ * the edge CDN instead of re-fetching B2/R2 on every hit.
  */
 import { Hono } from "hono"
 import type { Context } from "hono"
@@ -9,9 +15,39 @@ import type { AppEnv } from "../types.ts"
 
 const route = new Hono<AppEnv>()
 
-const CACHE = "public, max-age=604800"
+/** Browser + CDN: long-lived; safe with content-hashed object keys. */
+const CACHE_CONTROL = "public, max-age=31536000, s-maxage=31536000, immutable"
 
-async function serveMedia(c: Context<AppEnv>, key: string, fallbackType: string) {
+/** Legacy unhashed filenames — shorter TTL because the same path can be overwritten. */
+const CACHE_CONTROL_LEGACY = "public, max-age=86400, s-maxage=604800"
+
+const HASHED_FILE =
+  /^(thumb|start|end)\.[a-f0-9]{16}\.webp$/i
+const LEGACY_FILE = /^(thumb|start|end)\.(webp|jpg|gif)$/i
+
+function isSafeSlug(slug: string) {
+  return /^[a-z0-9][a-z0-9_-]{0,120}$/i.test(slug)
+}
+
+async function serveMedia(
+  c: Context<AppEnv>,
+  key: string,
+  fallbackType: string,
+  cacheControl: string,
+) {
+  const requestUrl = new URL(c.req.url)
+  const cacheKey = new Request(new URL(requestUrl.pathname, requestUrl.origin).toString(), {
+    method: "GET",
+  })
+
+  const cache = caches.default
+  const cached = await cache.match(cacheKey)
+  if (cached) {
+    const hit = new Response(cached.body, cached)
+    hit.headers.set("X-Media-Cache", "HIT")
+    return hit
+  }
+
   const store = getMediaStore(c.env)
   if (!store) {
     return c.json(
@@ -31,40 +67,40 @@ async function serveMedia(c: Context<AppEnv>, key: string, fallbackType: string)
 
   const headers = new Headers()
   headers.set("Content-Type", obj.contentType ?? fallbackType)
-  headers.set("Cache-Control", CACHE)
-  return new Response(obj.body, { headers })
+  headers.set("Cache-Control", cacheControl)
+  headers.set("X-Media-Cache", "MISS")
+  headers.set("Access-Control-Allow-Origin", "*")
+
+  const response = new Response(obj.body, { headers })
+  c.executionCtx.waitUntil(cache.put(cacheKey, response.clone()))
+  return response
 }
 
-route.get("/exercises/:slug/thumb.webp", (c) => {
+/**
+ * GET /api/media/exercises/:slug/:file
+ * file = thumb.<hash>.webp | start.<hash>.webp | end.<hash>.webp
+ *      or legacy thumb.webp / start.jpg / …
+ */
+route.get("/exercises/:slug/:file", (c) => {
   const slug = c.req.param("slug")
-  return serveMedia(c, `exercises/${slug}/thumb.webp`, "image/webp")
-})
+  const file = c.req.param("file")
+  if (!isSafeSlug(slug)) return c.body(null, 400)
 
-/** Legacy GIF path — serves old objects if present. */
-route.get("/exercises/:slug/thumb.gif", (c) => {
-  const slug = c.req.param("slug")
-  return serveMedia(c, `exercises/${slug}.gif`, "image/gif")
-})
+  if (HASHED_FILE.test(file)) {
+    const ext = file.toLowerCase().endsWith(".webp") ? "image/webp" : "application/octet-stream"
+    return serveMedia(c, `exercises/${slug}/${file}`, ext, CACHE_CONTROL)
+  }
 
-route.get("/exercises/:id/start.webp", (c) => {
-  const id = c.req.param("id")
-  return serveMedia(c, `exercises/${id}/start.webp`, "image/webp")
-})
+  if (LEGACY_FILE.test(file)) {
+    // Legacy GIF path was exercises/{slug}.gif (no folder) — keep stills/thumbs under slug/.
+    if (file === "thumb.gif") {
+      return serveMedia(c, `exercises/${slug}.gif`, "image/gif", CACHE_CONTROL_LEGACY)
+    }
+    const type = file.endsWith(".jpg") ? "image/jpeg" : file.endsWith(".gif") ? "image/gif" : "image/webp"
+    return serveMedia(c, `exercises/${slug}/${file}`, type, CACHE_CONTROL_LEGACY)
+  }
 
-route.get("/exercises/:id/end.webp", (c) => {
-  const id = c.req.param("id")
-  return serveMedia(c, `exercises/${id}/end.webp`, "image/webp")
-})
-
-/** Legacy JPEG stills — served if old objects remain in the bucket. */
-route.get("/exercises/:id/start.jpg", (c) => {
-  const id = c.req.param("id")
-  return serveMedia(c, `exercises/${id}/start.jpg`, "image/jpeg")
-})
-
-route.get("/exercises/:id/end.jpg", (c) => {
-  const id = c.req.param("id")
-  return serveMedia(c, `exercises/${id}/end.jpg`, "image/jpeg")
+  return c.body(null, 404)
 })
 
 export { route as mediaRoutes }

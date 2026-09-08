@@ -15,7 +15,31 @@ import type { AppEnv } from "../types.ts"
 const route = new Hono<AppEnv>()
 route.use(requireAuth)
 
+function parseMediaJson(raw: string | null): Exercise["media"] | undefined {
+  if (!raw) return undefined
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== "object") return undefined
+    const o = parsed as Record<string, unknown>
+    const media: NonNullable<Exercise["media"]> = {}
+    for (const k of ["thumb", "start", "end"] as const) {
+      if (typeof o[k] === "string" && o[k]) media[k] = o[k]
+    }
+    return Object.keys(media).length ? media : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function toExercise(row: typeof exercises.$inferSelect): Exercise {
+  const media =
+    parseMediaJson(row.mediaJson) ??
+    (row.gifR2Key
+      ? {
+          thumb: row.gifR2Key,
+        }
+      : undefined)
+
   return ExerciseSchema.parse({
     id: row.id,
     name: row.name,
@@ -24,6 +48,7 @@ function toExercise(row: typeof exercises.$inferSelect): Exercise {
     difficulty: row.difficulty,
     instructions: row.instructions,
     hasGif: row.hasGif === 1,
+    media,
     youtubeStatus: row.youtubeStatus,
     youtube: row.youtubeJson ? JSON.parse(row.youtubeJson) : undefined,
   })

@@ -82,8 +82,10 @@ for (const url of targets) {
 }
 
 console.log(`
-Pages var (Production + Preview):
+Pages vars (Production + Preview):
   GYMFOLIO_API_ORIGIN=https://gymfolio-api-staging.<subdomain>.workers.dev
+  VITE_MEDIA_ORIGIN=https://gymfolio-api-staging.<subdomain>.workers.dev
+  (VITE_* must be set as a *build* variable so media bypasses the Pages /api proxy)
 `)
 
 if (failed) process.exit(1)

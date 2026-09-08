@@ -5,7 +5,7 @@ import { invites, tenants, users } from "db"
 import { RegisterInputSchema, LoginInputSchema, type Role } from "shared"
 import { getDb } from "../lib/db.ts"
 import { hashPassword, verifyPassword } from "../lib/password.ts"
-import { createSession, destroySession, SESSION_COOKIE } from "../lib/session.ts"
+import { createOrRefreshSession, destroySession, SESSION_COOKIE } from "../lib/session.ts"
 import { setSessionCookie, serializeUser } from "../lib/session-response.ts"
 import { checkInviteToken } from "../lib/invites.ts"
 import { requireAuth } from "../middleware/auth.ts"
@@ -67,7 +67,17 @@ auth.post("/register", async (c) => {
     await db.update(invites).set({ usedAt: Date.now(), usedByUserId: userId }).where(eq(invites.id, inviteId))
   }
 
-  const { sessionId, expiresAt } = await createSession(db, c.env.SESSIONS_KV, userId, tenantId, role)
+  const { sessionId, expiresAt } = await createOrRefreshSession(
+    db,
+    c.env.SESSIONS_KV,
+    userId,
+    tenantId,
+    role,
+    {
+      deviceKey: body.data.deviceKey,
+      currentSessionId: getCookie(c, SESSION_COOKIE),
+    },
+  )
   setSessionCookie(c, sessionId, expiresAt)
 
   return c.json({ user: { id: userId, tenantId, username: body.data.username, role, createdAt } }, 201)
@@ -88,7 +98,17 @@ auth.post("/login", async (c) => {
   const valid = await verifyPassword(body.data.password, user.passwordHash)
   if (!valid) return c.json({ error: "Incorrect username or password" }, 401)
 
-  const { sessionId, expiresAt } = await createSession(db, c.env.SESSIONS_KV, user.id, user.tenantId, user.role as Role)
+  const { sessionId, expiresAt } = await createOrRefreshSession(
+    db,
+    c.env.SESSIONS_KV,
+    user.id,
+    user.tenantId,
+    user.role as Role,
+    {
+      deviceKey: body.data.deviceKey,
+      currentSessionId: getCookie(c, SESSION_COOKIE),
+    },
+  )
   setSessionCookie(c, sessionId, expiresAt)
 
   return c.json({ user: serializeUser(user) })

@@ -5,6 +5,7 @@ import type {
   RegistrationResponseJSON,
   AuthenticationResponseJSON,
 } from "@simplewebauthn/browser"
+import { getOrCreateDeviceKey } from "@/lib/device-key"
 import {
   RegisterInputSchema,
   LoginInputSchema,
@@ -118,13 +119,15 @@ async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
 
 // --- auth ---
 export function register(input: RegisterInput) {
-  RegisterInputSchema.parse(input)
-  return request("/auth/register", { method: "POST", body: JSON.stringify(input) }, z.object({ user: SessionResponseSchema.shape.user }))
+  const body = { ...input, deviceKey: input.deviceKey ?? getOrCreateDeviceKey() }
+  RegisterInputSchema.parse(body)
+  return request("/auth/register", { method: "POST", body: JSON.stringify(body) }, z.object({ user: SessionResponseSchema.shape.user }))
 }
 
 export function login(input: LoginInput) {
-  LoginInputSchema.parse(input)
-  return request("/auth/login", { method: "POST", body: JSON.stringify(input) }, z.object({ user: SessionResponseSchema.shape.user }))
+  const body = { ...input, deviceKey: input.deviceKey ?? getOrCreateDeviceKey() }
+  LoginInputSchema.parse(body)
+  return request("/auth/login", { method: "POST", body: JSON.stringify(body) }, z.object({ user: SessionResponseSchema.shape.user }))
 }
 
 export function logout() {
@@ -185,17 +188,26 @@ export function passkeyRegisterVerify(flowId: string, response: RegistrationResp
   })
 }
 
-export function passkeyLoginOptions() {
+export function passkeyLoginOptions(opts?: { allowCredentialIds?: string[] }) {
   return requestJson<{ flowId: string; options: PublicKeyCredentialRequestOptionsJSON }>(
     "/auth/passkey/login-options",
-    { method: "POST" },
+    {
+      method: "POST",
+      body: JSON.stringify({
+        allowCredentialIds: opts?.allowCredentialIds ?? [],
+      }),
+    },
   )
 }
 
-export function passkeyLoginVerify(flowId: string, response: AuthenticationResponseJSON) {
+export function passkeyLoginVerify(
+  flowId: string,
+  response: AuthenticationResponseJSON,
+  deviceKey?: string,
+) {
   return requestJson<SessionResponse>("/auth/passkey/login-verify", {
     method: "POST",
-    body: JSON.stringify({ flowId, response }),
+    body: JSON.stringify({ flowId, response, deviceKey: deviceKey ?? getOrCreateDeviceKey() }),
   })
 }
 
@@ -401,8 +413,15 @@ export function listExercises(params?: { q?: string; muscle?: string; equipment?
   return request(`/exercises${query ? `?${query}` : ""}`, { method: "GET" }, z.object({ exercises: z.array(ExerciseSchema), total: z.number().optional() }))
 }
 
-export function fetchExerciseYoutube(id: string): Promise<{ exercise: Exercise }> {
-  return request(`/exercises/${id}/youtube`, { method: "POST" }, z.object({ exercise: ExerciseSchema }))
+export function fetchExerciseYoutube(id: string): Promise<{ exercise: Exercise; skipped?: string }> {
+  return request(
+    `/exercises/${id}/youtube`,
+    { method: "POST" },
+    z.object({
+      exercise: ExerciseSchema,
+      skipped: z.enum(["no_api_key", "quota_cap", "not_found"]).optional(),
+    }),
+  )
 }
 
 export function getExercise(id: string): Promise<{ exercise: Exercise }> {

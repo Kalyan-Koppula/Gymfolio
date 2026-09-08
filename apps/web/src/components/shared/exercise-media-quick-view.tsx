@@ -23,7 +23,7 @@ export function ExerciseMediaQuickView({
   exercise,
   className,
 }: {
-  exercise: Pick<Exercise, "id" | "name" | "hasGif">
+  exercise: Pick<Exercise, "id" | "name" | "hasGif" | "media">
   className?: string
 }) {
   const navigate = useNavigate()
@@ -37,7 +37,12 @@ export function ExerciseMediaQuickView({
         aria-label={`Preview media for ${exercise.name}`}
         className={cn("block overflow-hidden rounded-lg ring-offset-background transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", className)}
       >
-        <ExerciseThumb hasGif={exercise.hasGif} exerciseId={exercise.id} className="w-full" />
+        <ExerciseThumb
+          hasGif={exercise.hasGif}
+          exerciseId={exercise.id}
+          media={exercise.media}
+          className="w-full"
+        />
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -46,7 +51,11 @@ export function ExerciseMediaQuickView({
             <DialogTitle className="pr-6">{exercise.name}</DialogTitle>
             <DialogDescription>Quick peek — play/pause the start↔end reference.</DialogDescription>
           </DialogHeader>
-          <ExerciseMediaPlayer exerciseId={exercise.id} hasGif={exercise.hasGif} />
+          <ExerciseMediaPlayer
+            exerciseId={exercise.id}
+            hasGif={exercise.hasGif}
+            media={exercise.media}
+          />
           <DialogFooter className="flex-col gap-2 sm:flex-col">
             <Button
               className="h-11 w-full"

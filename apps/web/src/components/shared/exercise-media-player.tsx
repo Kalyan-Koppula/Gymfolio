@@ -1,7 +1,9 @@
 import { ChevronLeft, ChevronRight, ImageOff, Pause, Play } from "lucide-react"
 import * as React from "react"
 import { Button } from "@/components/ui/button"
+import { exerciseMediaUrl, mediaObjectUrl } from "@/lib/media-url"
 import { cn } from "@/lib/utils"
+import type { ExerciseMedia } from "shared"
 
 const MEDIA_ASPECT = "aspect-[850/567]"
 
@@ -9,9 +11,18 @@ const FRAME_MS = 900
 
 type Frame = "start" | "end"
 
-function mediaUrl(exerciseId: string, name: "start" | "end", webp: boolean) {
-  const ext = webp ? "webp" : "jpg"
-  return `/api/media/exercises/${exerciseId}/${name}.${ext}`
+function frameUrl(
+  exerciseId: string,
+  name: Frame,
+  webp: boolean,
+  media?: ExerciseMedia,
+) {
+  if (webp) {
+    const keyed = name === "start" ? media?.start : media?.end
+    const fromKey = mediaObjectUrl(keyed)
+    if (fromKey) return fromKey
+  }
+  return exerciseMediaUrl(exerciseId, `${name}.${webp ? "webp" : "jpg"}`)
 }
 
 /**
@@ -21,10 +32,12 @@ function mediaUrl(exerciseId: string, name: "start" | "end", webp: boolean) {
 export function ExerciseMediaPlayer({
   exerciseId,
   hasGif,
+  media,
   className,
 }: {
   exerciseId: string
   hasGif: boolean
+  media?: ExerciseMedia
   className?: string
 }) {
   const [playing, setPlaying] = React.useState(hasGif)
@@ -49,9 +62,9 @@ export function ExerciseMediaPlayer({
     setEndOk(hasGif)
     setWebp(true)
     setMissing(false)
-  }, [exerciseId, hasGif])
+  }, [exerciseId, hasGif, media?.start, media?.end])
 
-  const src = mediaUrl(exerciseId, frame, webp)
+  const src = frameUrl(exerciseId, frame, webp, media)
 
   function onImageError() {
     if (frame === "end" && webp) {

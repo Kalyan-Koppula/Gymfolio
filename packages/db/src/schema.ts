@@ -20,13 +20,21 @@ export const users = sqliteTable("users", {
   createdAt: integer("created_at").notNull(),
 })
 
-export const sessions = sqliteTable("sessions", {
-  id: text("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id),
-  expiresAt: integer("expires_at").notNull(),
-})
+export const sessions = sqliteTable(
+  "sessions",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    expiresAt: integer("expires_at").notNull(),
+    /** Stable per-browser id from the client — one live session per device. */
+    deviceKey: text("device_key"),
+    /** Last authenticated activity (sliding TTL updates this). */
+    lastActiveAt: integer("last_active_at"),
+  },
+  (t) => [uniqueIndex("sessions_user_device_uidx").on(t.userId, t.deviceKey)],
+)
 
 // The actual mechanism behind "no one else who opens this link can sign up" — a token is dead
 // the instant it's used or past expiresAt, checked identically by the public validation
@@ -203,6 +211,8 @@ export const workoutLogSets = sqliteTable("workout_log_sets", {
   setIndex: integer("set_index").notNull(), // 0-based within that exercise for this session
   actualReps: integer("actual_reps").notNull(),
   actualWeightKg: real("actual_weight_kg").notNull(),
+  /** 0/1 — skipped sets count toward session progress but not muscle/strength charts. */
+  skipped: integer("skipped").notNull().default(0),
   updatedAt: integer("updated_at").notNull(),
 })
 
@@ -216,6 +226,8 @@ export const exercises = sqliteTable("exercises", {
   instructions: text("instructions").notNull(),
   hasGif: integer("has_gif").notNull().default(0), // 0/1
   gifR2Key: text("gif_r2_key"),
+  /** JSON { thumb?, start?, end? } — content-addressed object keys (exercises/slug/kind.hash.webp). */
+  mediaJson: text("media_json"),
   youtubeStatus: text("youtube_status").notNull().default("not_fetched"),
   youtubeJson: text("youtube_json"), // optional { title, channel, views }
 })

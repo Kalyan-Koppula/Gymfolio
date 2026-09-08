@@ -73,15 +73,17 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,svg,png,webp,woff2,webmanifest}'],
         runtimeCaching: [
           {
-            urlPattern: ({ url }) =>
-              url.pathname.startsWith('/api/media/exercises/') &&
-              (url.pathname.endsWith('.webp') ||
-                url.pathname.endsWith('.gif') ||
-                url.pathname.endsWith('.jpg')),
+            urlPattern: ({ url }) => {
+              const mediaPath =
+                url.pathname.startsWith('/api/media/exercises/') &&
+                (/\.(webp|gif|jpg)$/i.test(url.pathname) ||
+                  /\.(thumb|start|end)\.[a-f0-9]{16}\.webp$/i.test(url.pathname))
+              return mediaPath
+            },
             handler: 'CacheFirst',
             options: {
-              cacheName: 'exercise-media-v2',
-              expiration: { maxEntries: 400, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheName: 'exercise-media-v4',
+              expiration: { maxEntries: 400, maxAgeSeconds: 60 * 60 * 24 * 365 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },

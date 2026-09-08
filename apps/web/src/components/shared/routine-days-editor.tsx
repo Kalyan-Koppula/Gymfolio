@@ -13,12 +13,23 @@ import {
   activeDays,
   normalizeRoutineDay,
   type Equipment,
+  type Exercise,
   type RoutineDay,
 } from "@/lib/stub-data"
 import { useExercises } from "@/hooks/use-exercises"
 
 /** How long the "Undo" on a removed day stays offered before the archive is effectively final. */
 const UNDO_WINDOW_MS = 8000
+
+function isLikelyBodyweightExercise(ex?: Exercise) {
+  if (!ex) return false
+  const eq = ex.equipment
+  if (eq.length === 0) return true
+  const loadBearing = eq.some((e) =>
+    ["barbell", "dumbbell", "kettlebell", "cable-machine", "squat-rack", "bench"].includes(e),
+  )
+  return !loadBearing
+}
 
 function parseLeadingInt(s: string, fallback: number) {
   const m = s.match(/\d+/)
@@ -69,7 +80,7 @@ export function RoutineDaysEditor({
   function updateExercise(
     dayId: string,
     exerciseId: string,
-    patch: Partial<{ targetSets: number; targetReps: string }>,
+    patch: Partial<{ targetSets: number; targetReps: string; trackWeight: boolean }>,
   ) {
     setDays((prev) =>
       prev.map((d) =>
@@ -109,6 +120,7 @@ export function RoutineDaysEditor({
               targetSets: 3,
               targetReps: "10",
               orderIndex: d.exercises.length,
+              trackWeight: !isLikelyBodyweightExercise(exercises?.find((e) => e.id === exerciseId)),
             },
           ],
         }
@@ -367,8 +379,21 @@ export function RoutineDaysEditor({
                               </div>
                             </div>
                             <p className="mt-0.5 text-xs text-muted-foreground">
-                              Weight is suggested at workout time from your last session (+2.5kg).
+                              {re.trackWeight === false
+                                ? "Bodyweight — no load asked during the workout."
+                                : "Weight is suggested at workout time from your last session (+2.5kg)."}
                             </p>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateExercise(day.id, re.exerciseId, {
+                                  trackWeight: re.trackWeight === false,
+                                })
+                              }
+                              className="mt-1.5 text-xs font-medium text-primary underline-offset-2 hover:underline"
+                            >
+                              {re.trackWeight === false ? "Track weight instead" : "No weight needed"}
+                            </button>
                           </div>
                         </div>
                         <div className="flex items-center justify-between gap-2">

@@ -18,12 +18,15 @@ export const RegisterInputSchema = z.object({
   // Required for every registration after the instance's first (owner) account — enforced
   // server-side, not just hidden client-side.
   inviteToken: z.string().optional(),
+  /** Stable per-browser id — one session row per device. */
+  deviceKey: z.string().min(8).max(128).optional(),
 })
 export type RegisterInput = z.infer<typeof RegisterInputSchema>
 
 export const LoginInputSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
+  deviceKey: z.string().min(8).max(128).optional(),
 })
 export type LoginInput = z.infer<typeof LoginInputSchema>
 

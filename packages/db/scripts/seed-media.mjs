@@ -10,7 +10,8 @@
  *   pnpm seed:media -- --upload-only  # upload cached WebPs (no re-encode)
  *   pnpm seed:media -- --backend b2   # upload to Backblaze B2 instead of R2
  *   pnpm seed:media -- --staging      # remote staging D1 + B2 (prefer: pnpm seed:staging)
- *   pnpm seed:media -- --d1-only      # catalog → D1 only (uses local .cache/.../out thumbs; no B2)
+ *   pnpm seed:media -- --d1-only      # catalog → D1 only (hashes local out/* WebPs; no B2)
+ *   pnpm seed:media -- --upload-only  # upload content-hashed WebPs + update D1 keys
  *   pnpm seed:media -- --skip-upload  # skip object storage upload
  *   pnpm preview:gifs                 # local WebP quality comparison (no upload)
  */
@@ -25,8 +26,7 @@ import {
   sqlString,
   LEGACY_STUB_MAP,
 } from "./lib/fedb-map.mjs"
-import { buildExerciseMedia } from "./lib/seed-exercise-media.mjs"
-import { thumbR2Key } from "./lib/media-build.mjs"
+import { buildExerciseMedia, resolveHashedMediaFromDir } from "./lib/seed-exercise-media.mjs"
 import { resolveMediaBackend, uploadMediaObjects } from "./lib/media-upload.mjs"
 
 const ROOT = path.resolve(import.meta.dirname, "../../..")
@@ -181,6 +181,8 @@ async function processExercise(ex) {
 
   let hasGif = 0
   let gifR2Key = null
+  /** @type {Record<string, string>} */
+  let media = {}
   const tmpDir = path.join(CACHE, "out", slug)
   fs.mkdirSync(tmpDir, { recursive: true })
   const uploads = []
@@ -193,6 +195,7 @@ async function processExercise(ex) {
       uploads.push(...built.uploads)
       hasGif = built.hasGif
       gifR2Key = built.gifR2Key
+      media = built.media ?? {}
     } catch (err) {
       console.warn(`  ⚠ media skipped for ${slug}: ${err.message}`)
     }
@@ -207,6 +210,7 @@ async function processExercise(ex) {
     instructions,
     hasGif,
     gifR2Key,
+    mediaJson: Object.keys(media).length ? JSON.stringify(media) : null,
     uploads,
   }
 }
@@ -215,23 +219,31 @@ function buildInsertBatch(rows) {
   const values = rows
     .map(
       (r) =>
-        `(${sqlString(r.id)}, ${sqlString(r.name)}, ${sqlString(r.muscleGroupsJson)}, ${sqlString(r.equipmentJson)}, ${sqlString(r.difficulty)}, ${sqlString(r.instructions)}, ${r.hasGif}, ${r.gifR2Key ? sqlString(r.gifR2Key) : "NULL"}, 'not_fetched', NULL)`,
+        `(${sqlString(r.id)}, ${sqlString(r.name)}, ${sqlString(r.muscleGroupsJson)}, ${sqlString(r.equipmentJson)}, ${sqlString(r.difficulty)}, ${sqlString(r.instructions)}, ${r.hasGif}, ${r.gifR2Key ? sqlString(r.gifR2Key) : "NULL"}, ${r.mediaJson ? sqlString(r.mediaJson) : "NULL"}, 'not_fetched', NULL)`,
     )
     .join(",")
   // OR REPLACE so retries / partial prior runs do not hit UNIQUE on exercises.id
-  return `INSERT OR REPLACE INTO exercises (id, name, muscle_groups_json, equipment_json, difficulty, instructions, has_gif, gif_r2_key, youtube_status, youtube_json) VALUES ${values};`
+  return `INSERT OR REPLACE INTO exercises (id, name, muscle_groups_json, equipment_json, difficulty, instructions, has_gif, gif_r2_key, media_json, youtube_status, youtube_json) VALUES ${values};`
 }
 
-/** Build D1 rows from catalog JSON + local out/{slug}/thumb.webp (no re-encode / no B2). */
+/** Build D1 rows from catalog JSON + local out/{slug} WebPs (hash keys; no re-encode / no B2). */
 function rowsFromLocalCache(list) {
   const outRoot = path.join(CACHE, "out")
   const rows = []
   let withThumb = 0
   for (const ex of list) {
     const slug = fedbIdToSlug(ex.id)
-    const thumbPath = path.join(outRoot, slug, "thumb.webp")
-    const hasGif = fs.existsSync(thumbPath) ? 1 : 0
-    if (hasGif) withThumb++
+    const dir = path.join(outRoot, slug)
+    let media = {}
+    let hasGif = 0
+    let gifR2Key = null
+    if (fs.existsSync(dir)) {
+      const resolved = resolveHashedMediaFromDir(dir, slug)
+      media = resolved.media
+      hasGif = resolved.hasGif
+      gifR2Key = resolved.gifR2Key
+      if (hasGif) withThumb++
+    }
     rows.push({
       id: slug,
       name: ex.name,
@@ -240,10 +252,11 @@ function rowsFromLocalCache(list) {
       difficulty: mapDifficulty(ex.level),
       instructions: (ex.instructions ?? []).join("\n\n"),
       hasGif,
-      gifR2Key: hasGif ? thumbR2Key(slug) : null,
+      gifR2Key,
+      mediaJson: Object.keys(media).length ? JSON.stringify(media) : null,
     })
   }
-  console.log(`D1-only: ${rows.length} exercises, ${withThumb} with local thumb.webp`)
+  console.log(`D1-only: ${rows.length} exercises, ${withThumb} with hashed thumb keys`)
   return rows
 }
 
@@ -333,37 +346,48 @@ async function main() {
   if (UPLOAD_ONLY) {
     const outRoot = path.join(CACHE, "out")
     const uploads = []
+    /** @type {Array<{ slug: string, media: Record<string, string>, hasGif: number, gifR2Key: string|null }>} */
+    const manifests = []
     for (const slug of fs.readdirSync(outRoot)) {
       const dir = path.join(outRoot, slug)
       if (!fs.statSync(dir).isDirectory()) continue
-      for (const name of ["start.webp", "end.webp", "thumb.webp"]) {
-        const filePath = path.join(dir, name)
-        if (!fs.existsSync(filePath)) continue
-        uploads.push({ key: `exercises/${slug}/${name}`, filePath, contentType: "image/webp" })
+      const resolved = resolveHashedMediaFromDir(dir, slug)
+      if (resolved.uploads.length === 0) continue
+      uploads.push(...resolved.uploads)
+      manifests.push({
+        slug,
+        media: resolved.media,
+        hasGif: resolved.hasGif,
+        gifR2Key: resolved.gifR2Key,
+      })
+    }
+    console.log(`Uploading ${uploads.length} content-hashed WebP objects to ${MEDIA_BACKEND}…`)
+    if (!SKIP_UPLOAD && uploads.length > 0) await putMediaPool(uploads)
+    if (manifests.length > 0) {
+      console.log("Updating D1 media_json / gif_r2_key…")
+      // Batch UPDATEs — staging remote is picky about huge files.
+      const BATCH = STAGING ? 20 : 50
+      for (let i = 0; i < manifests.length; i += BATCH) {
+        const chunk = manifests.slice(i, i + BATCH)
+        const sql = chunk
+          .map((m) => {
+            const mediaJson = sqlString(JSON.stringify(m.media))
+            const thumb = m.gifR2Key ? sqlString(m.gifR2Key) : "NULL"
+            return `UPDATE exercises SET has_gif = ${m.hasGif}, gif_r2_key = ${thumb}, media_json = ${mediaJson} WHERE id = ${sqlString(m.slug)};`
+          })
+          .join("\n")
+        d1Exec(sql, { label: `media keys ${Math.floor(i / BATCH) + 1}` })
       }
     }
-    console.log(`Uploading ${uploads.length} cached WebP objects to ${MEDIA_BACKEND}…`)
-    if (!SKIP_UPLOAD && uploads.length > 0) await putMediaPool(uploads)
-    const thumbUpdates = uploads.filter((u) => u.key.endsWith("/thumb.webp"))
-    if (thumbUpdates.length > 0) {
-      console.log("Updating D1 gif_r2_key paths…")
-      const sql = thumbUpdates
-        .map((u) => {
-          const slug = u.key.match(/exercises\/(.+)\/thumb\.webp/)?.[1]
-          if (!slug) return ""
-          return `UPDATE exercises SET has_gif = 1, gif_r2_key = ${sqlString(u.key)} WHERE id = ${sqlString(slug)};`
-        })
-        .filter(Boolean)
-        .join("\n")
-      if (sql) d1Exec(sql)
-    }
-    console.log(`Done. ${uploads.length} WebP files uploaded.`)
+    console.log(`Done. ${uploads.length} hashed WebP files uploaded for ${manifests.length} exercises.`)
     return
   }
 
   if (MEDIA_ONLY) {
     console.log(`Regenerating WebP media (850:567 aspect, thumb 480×320 / stills 512×341) for ${list.length} exercises…`)
     const uploads = []
+    /** @type {Array<{ slug: string, media: Record<string, string>, hasGif: number, gifR2Key: string|null }>} */
+    const manifests = []
     for (let i = 0; i < list.length; i++) {
       const ex = list[i]
       const slug = fedbIdToSlug(ex.id)
@@ -376,28 +400,36 @@ async function main() {
         const tmpDir = path.join(CACHE, "out", slug)
         const built = buildExerciseMedia(startBuf, endBuf, tmpDir, slug, { skipR2: SKIP_UPLOAD })
         uploads.push(...built.uploads)
+        manifests.push({
+          slug,
+          media: built.media ?? {},
+          hasGif: built.hasGif,
+          gifR2Key: built.gifR2Key,
+        })
       } catch (err) {
         console.warn(`  ⚠ media skipped for ${slug}: ${err.message}`)
       }
     }
     if (!SKIP_UPLOAD && uploads.length > 0) {
-      console.log(`Uploading ${uploads.length} WebP objects to ${MEDIA_BACKEND}…`)
+      console.log(`Uploading ${uploads.length} hashed WebP objects to ${MEDIA_BACKEND}…`)
       await putMediaPool(uploads)
     }
-    if (uploads.length > 0) {
-      console.log("Updating D1 gif_r2_key paths…")
-      const thumbUpdates = uploads.filter((u) => u.key.endsWith("/thumb.webp"))
-      const sql = thumbUpdates
-        .map((u) => {
-          const slug = u.key.match(/exercises\/(.+)\/thumb\.webp/)?.[1]
-          if (!slug) return ""
-          return `UPDATE exercises SET has_gif = 1, gif_r2_key = ${sqlString(u.key)} WHERE id = ${sqlString(slug)};`
-        })
-        .filter(Boolean)
-        .join("\n")
-      if (sql) d1Exec(sql)
+    if (manifests.length > 0) {
+      console.log("Updating D1 media_json / gif_r2_key…")
+      const BATCH = STAGING ? 20 : 50
+      for (let i = 0; i < manifests.length; i += BATCH) {
+        const chunk = manifests.slice(i, i + BATCH)
+        const sql = chunk
+          .map((m) => {
+            const mediaJson = Object.keys(m.media).length ? sqlString(JSON.stringify(m.media)) : "NULL"
+            const thumb = m.gifR2Key ? sqlString(m.gifR2Key) : "NULL"
+            return `UPDATE exercises SET has_gif = ${m.hasGif}, gif_r2_key = ${thumb}, media_json = ${mediaJson} WHERE id = ${sqlString(m.slug)};`
+          })
+          .join("\n")
+        d1Exec(sql, { label: `media keys ${Math.floor(i / BATCH) + 1}` })
+      }
     }
-    console.log(`Done. ${uploads.length} WebP files regenerated (${uploads.length / 3 | 0} exercises with loops).`)
+    console.log(`Done. ${uploads.length} hashed WebP files for ${manifests.length} exercises.`)
     return
   }
 

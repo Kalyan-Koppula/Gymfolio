@@ -1,7 +1,7 @@
 import * as React from "react"
 import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
-import { Check, ChevronRight, History, ListChecks, Moon, X } from "lucide-react"
+import { Check, ChevronRight, History, ListChecks, Moon, SkipForward, X } from "lucide-react"
 import { TopBar } from "@/components/nav/top-bar"
 import { OfflineBanner } from "@/components/shared/offline-banner"
 import { ExerciseMediaQuickView } from "@/components/shared/exercise-media-quick-view"
@@ -31,6 +31,7 @@ type SetLog = {
   reps: number
   weightKg: number | null
   completed: boolean
+  skipped?: boolean
   setId?: string
 }
 
@@ -164,6 +165,7 @@ function ActiveWorkoutSession({
   const target = day.exercises[exIndex]
   const exercise = byId(target.exerciseId)
   const totalSets = target.targetSets
+  const trackWeight = target.trackWeight !== false
 
   const [setsByExercise, setSetsByExercise] = React.useState<Record<string, SetLog[]>>(() =>
     Object.fromEntries(
@@ -171,9 +173,10 @@ function ActiveWorkoutSession({
         re.exerciseId,
         Array.from({ length: re.targetSets }, (_, setIndex) => {
           const prior = re.lastSets?.find((s) => s.setIndex === setIndex) ?? re.lastSets?.[re.lastSets.length - 1]
+          const noWeight = re.trackWeight === false
           return {
             reps: prior?.reps ?? (parseInt(re.targetReps) || 10),
-            weightKg: suggestedWeightKg(setIndex, re.lastSets),
+            weightKg: noWeight ? 0 : suggestedWeightKg(setIndex, re.lastSets),
             completed: false,
           }
         }),
@@ -220,6 +223,7 @@ function ActiveWorkoutSession({
                 reps: logged.actualReps,
                 weightKg: logged.actualWeightKg,
                 completed: true,
+                skipped: logged.skipped === true,
                 setId: logged.id,
               }
             }
@@ -240,14 +244,16 @@ function ActiveWorkoutSession({
     }))
   }
 
-  function logSet() {
+  function logSet(opts?: { skipped?: boolean }) {
     if (!workoutId) {
       toast.error("Workout session isn't ready yet")
       return
     }
     const active = sets[activeSetIndex]
-    if (active.weightKg == null) {
-      toast.error("Enter a weight before logging — or tap + to set one")
+    const skipped = opts?.skipped === true
+    const weightKg = trackWeight ? active.weightKg : 0
+    if (!skipped && trackWeight && weightKg == null) {
+      toast.error("Enter a weight before logging — or mark this exercise as bodyweight in the routine")
       return
     }
     run(
@@ -255,11 +261,18 @@ function ActiveWorkoutSession({
         logWorkoutSet(workoutId, {
           exerciseId: target.exerciseId,
           setIndex: activeSetIndex,
-          actualReps: active.reps,
-          actualWeightKg: active.weightKg!,
+          actualReps: skipped ? 0 : active.reps,
+          actualWeightKg: skipped ? 0 : (weightKg ?? 0),
+          skipped,
         }),
       (res) => {
-        updateSet(activeSetIndex, { completed: true, setId: res.set.id })
+        updateSet(activeSetIndex, {
+          completed: true,
+          skipped,
+          setId: res.set.id,
+          reps: skipped ? 0 : active.reps,
+          weightKg: skipped ? 0 : (weightKg ?? 0),
+        })
         setEditingSetIndex(null)
       },
     )
@@ -378,17 +391,24 @@ function ActiveWorkoutSession({
                   size="touch"
                 />
               </div>
-              <div className="flex flex-col items-center gap-1.5">
-                <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Weight</span>
-                <NumberStepper
-                  value={sets[activeSetIndex].weightKg}
-                  onChange={(v) => updateSet(activeSetIndex, { weightKg: v })}
-                  step={2.5}
-                  min={0}
-                  suffix="kg"
-                  size="touch"
-                />
-              </div>
+              {trackWeight ? (
+                <div className="flex flex-col items-center gap-1.5">
+                  <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Weight</span>
+                  <NumberStepper
+                    value={sets[activeSetIndex].weightKg}
+                    onChange={(v) => updateSet(activeSetIndex, { weightKg: v })}
+                    step={2.5}
+                    min={0}
+                    suffix="kg"
+                    size="touch"
+                  />
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-1.5">
+                  <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Load</span>
+                  <p className="flex h-12 items-center text-sm font-medium text-muted-foreground">Bodyweight</p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -409,10 +429,18 @@ function ActiveWorkoutSession({
                   >
                     <span className="flex items-center gap-2">
                       <Check className="size-3.5 text-success" /> Set {i + 1}
-                      <span className="text-xs text-muted-foreground">Tap to edit</span>
+                      {s.skipped ? (
+                        <span className="text-xs text-muted-foreground">Skipped</span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Tap to edit</span>
+                      )}
                     </span>
                     <span className="font-medium">
-                      {s.reps} reps @ {s.weightKg ?? "—"}kg
+                      {s.skipped
+                        ? "—"
+                        : trackWeight
+                          ? `${s.reps} reps @ ${s.weightKg ?? "—"}kg`
+                          : `${s.reps} reps`}
                     </span>
                   </button>
                 ) : null,
@@ -431,7 +459,7 @@ function ActiveWorkoutSession({
               </Button>
               <Button
                 className="h-12 flex-1 text-base"
-                onClick={logSet}
+                onClick={() => logSet()}
                 disabled={status === "saving" || !workoutId}
               >
                 {status === "saving" ? "Saving…" : "Save changes"}
@@ -473,7 +501,17 @@ function ActiveWorkoutSession({
                 <X className="size-5" />
               </Button>
               <Button
-                onClick={logSet}
+                variant="outline"
+                className="h-12 shrink-0 px-3"
+                onClick={() => logSet({ skipped: true })}
+                disabled={status === "saving" || !workoutId}
+                aria-label="Skip set"
+              >
+                <SkipForward className="size-4" />
+                Skip
+              </Button>
+              <Button
+                onClick={() => logSet()}
                 disabled={status === "saving" || !workoutId}
                 variant={status === "failed" ? "destructive" : "default"}
                 className="h-12 flex-1 text-base"

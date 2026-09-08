@@ -1,15 +1,19 @@
 import * as React from "react"
 import { Navigate } from "react-router-dom"
 import { hasAccount } from "@/lib/api-client"
+import { useSession } from "@/contexts/session-context"
 
-/** The `/` route has no screen of its own — it just decides where a fresh visitor belongs.
- * No account anywhere yet means this is the very first run (owner bootstrap); an account
- * already existing means every other visitor goes to the password/passkey login screen,
- * never straight into onboarding. */
+/**
+ * `/` decides where a fresh open belongs.
+ * Valid session cookie → app (Netflix-style resume).
+ * Otherwise → onboarding (first account) or login.
+ */
 export function RootRedirect() {
+  const { user, loading } = useSession()
   const [target, setTarget] = React.useState<"/onboarding" | "/login" | null>(null)
 
   React.useEffect(() => {
+    if (loading || user) return
     let cancelled = false
     hasAccount()
       .then(({ hasAccount }) => {
@@ -21,8 +25,10 @@ export function RootRedirect() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [loading, user])
 
+  if (loading) return null
+  if (user) return <Navigate to="/today" replace />
   if (!target) return null
   return <Navigate to={target} replace />
 }

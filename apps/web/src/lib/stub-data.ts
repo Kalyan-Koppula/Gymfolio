@@ -257,12 +257,18 @@ export function autofillDayExercises(
       ? pool.filter((ex) => exerciseMatchesDayFocus(ex, focus) && hasUserEquipment(ex, availableEquipment))
       : pool.filter((ex) => hasUserEquipment(ex, availableEquipment))
 
-  return filtered.slice(0, count).map((ex, i) => ({
-    exerciseId: ex.id,
-    targetSets: 3,
-    targetReps: "8-12",
-    orderIndex: i,
-  }))
+  return filtered.slice(0, count).map((ex, i) => {
+    const loadBearing = ex.equipment.some((e) =>
+      ["barbell", "dumbbell", "kettlebell", "cable-machine", "squat-rack", "bench"].includes(e),
+    )
+    return {
+      exerciseId: ex.id,
+      targetSets: 3,
+      targetReps: "8-12",
+      orderIndex: i,
+      trackWeight: loadBearing,
+    }
+  })
 }
 
 /**

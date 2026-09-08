@@ -1,20 +1,24 @@
 import { ImageOff, PlayCircle } from "lucide-react"
 import * as React from "react"
+import { exerciseMediaUrl, mediaObjectUrl } from "@/lib/media-url"
 import { cn } from "@/lib/utils"
+import type { ExerciseMedia } from "shared"
 
 /** Matches encoded media aspect (850×567 source photos). */
 const MEDIA_ASPECT = "aspect-[850/567]"
 
 /**
- * Shows the R2-backed GIF when available, else start still, else a calm placeholder.
+ * Shows the hashed thumb when available, else start still, else a calm placeholder.
  */
 export function ExerciseThumb({
   hasGif,
   exerciseId,
+  media,
   className,
 }: {
   hasGif: boolean
   exerciseId?: string
+  media?: ExerciseMedia
   className?: string
 }) {
   const [failed, setFailed] = React.useState(false)
@@ -25,16 +29,21 @@ export function ExerciseThumb({
     setFailed(false)
     setStillFailed(false)
     setStillJpgFailed(false)
-  }, [exerciseId, hasGif])
+  }, [exerciseId, hasGif, media?.thumb, media?.start])
 
-  const gifSrc = hasGif && exerciseId && !failed ? `/api/media/exercises/${exerciseId}/thumb.webp` : null
+  const gifSrc =
+    hasGif && !failed
+      ? mediaObjectUrl(media?.thumb) ??
+        (exerciseId ? exerciseMediaUrl(exerciseId, "thumb.webp") : null)
+      : null
   const stillWebp =
-    exerciseId && (!hasGif || failed) && !stillFailed
-      ? `/api/media/exercises/${exerciseId}/start.webp`
+    (!hasGif || failed) && !stillFailed
+      ? mediaObjectUrl(media?.start) ??
+        (exerciseId ? exerciseMediaUrl(exerciseId, "start.webp") : null)
       : null
   const stillJpg =
-    exerciseId && (!hasGif || failed) && stillFailed && !stillJpgFailed
-      ? `/api/media/exercises/${exerciseId}/start.jpg`
+    (!hasGif || failed) && stillFailed && !stillJpgFailed && exerciseId
+      ? exerciseMediaUrl(exerciseId, "start.jpg")
       : null
   const stillSrc = stillWebp ?? stillJpg
   const src = gifSrc ?? stillSrc

@@ -221,6 +221,7 @@ export function TrainingProgress() {
                       tickMargin={8}
                       tickFormatter={(v: string) => v.slice(0, 3)}
                     />
+                    <YAxis tickLine={false} axisLine={false} width={28} allowDecimals={false} />
                     <ChartTooltip content={<ChartTooltipContent />} />
                     <Bar dataKey="sets" fill="var(--color-sets)" radius={4} />
                   </BarChart>

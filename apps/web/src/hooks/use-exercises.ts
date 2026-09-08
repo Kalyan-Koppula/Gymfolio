@@ -7,7 +7,7 @@ let inflight: Promise<Exercise[]> | null = null
 
 /** Per-exercise YouTube lookup — at most one network attempt for the lifetime of this tab. */
 const youtubeDone = new Set<string>()
-const youtubeInflight = new Map<string, Promise<Exercise>>()
+const youtubeInflight = new Map<string, Promise<{ exercise: Exercise; skipped?: string }>>()
 
 async function loadExercises(): Promise<Exercise[]> {
   if (cache) return cache
@@ -43,23 +43,26 @@ export function upsertExerciseInCache(updated: Exercise) {
  * (success, skip, or failure), never hits the quota-limited endpoint again this session.
  * Ready exercises short-circuit without a network call.
  */
-export async function ensureExerciseYoutube(id: string): Promise<Exercise | null> {
+export async function ensureExerciseYoutube(
+  id: string,
+): Promise<{ exercise: Exercise; skipped?: string } | null> {
   const cached = cache?.find((e) => e.id === id)
   if (cached?.youtubeStatus === "ready") {
     youtubeDone.add(id)
-    return cached
+    return { exercise: cached }
   }
   if (youtubeDone.has(id)) {
-    return cache?.find((e) => e.id === id) ?? null
+    const ex = cache?.find((e) => e.id === id)
+    return ex ? { exercise: ex } : null
   }
   const existing = youtubeInflight.get(id)
   if (existing) return existing
 
   const promise = (async () => {
     try {
-      const { exercise: updated } = await fetchExerciseYoutube(id)
+      const { exercise: updated, skipped } = await fetchExerciseYoutube(id)
       upsertExerciseInCache(updated)
-      return updated
+      return { exercise: updated, skipped }
     } finally {
       youtubeDone.add(id)
       youtubeInflight.delete(id)

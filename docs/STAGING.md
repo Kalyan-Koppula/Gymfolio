@@ -348,7 +348,9 @@ Dashboard → Workers & Pages → `gymfolio-web-staging` → Settings → Variab
 
 Open: `https://gymfolio-web-staging.pages.dev`
 
-SPA fallback: [`apps/web/public/_redirects`](../apps/web/public/_redirects).
+SPA fallback: [`apps/web/public/_redirects`](../apps/web/public/_redirects) is comments-only —
+do **not** use `/* /index.html 200` (Cloudflare Advanced Mode ignores it as an infinite loop).
+`pnpm pages:build` copies `index.html` → `404.html` so client routes still load the SPA shell.
 
 ### Verify proxy
 
@@ -395,9 +397,10 @@ Checklist before first push to a shared remote:
 ### B. Pages: Connect-to-Git (recommended for web)
 
 Connect-to-Git only uploads the **build output directory**. A Vite-only build
-ships SPA files and `/api/*` becomes HTML via `_redirects`. The fix is
+ships SPA files and `/api/*` has no Function (404 / SPA shell). The fix is
 [`pnpm pages:build`](../scripts/cf-pages-build.mjs): Vite build **plus** compile
-`apps/web/functions` → `apps/web/dist/_worker.js` (+ `_routes.json`).
+`apps/web/functions` → `apps/web/dist/_worker.js` (+ `_routes.json`), and
+`404.html` for client-side routes (not `/* /index.html 200` in `_redirects`).
 
 1. Dashboard → Workers & Pages → `gymfolio-web-staging` → **Settings** → **Builds**
    (or create via **Connect to Git**).

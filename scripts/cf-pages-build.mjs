@@ -3,7 +3,7 @@
  * Cloudflare Pages Connect-to-Git build for the web app.
  *
  * Connect-to-Git only publishes the build output directory. A plain Vite build
- * leaves /api/* without a Function → SPA _redirects serve index.html.
+ * leaves /api/* without a Function (404 / SPA shell only).
  *
  * This script:
  *   1) builds the SPA into apps/web/dist
@@ -111,4 +111,27 @@ if (!JSON.stringify(routes).includes("/api")) {
 
 const workerBytes = fs.statSync(path.join(DIST, "_worker.js")).size
 console.log(`→ dist/_worker.js (${workerBytes} bytes) ready for Connect-to-Git`)
+
+# SPA shell for missing paths. Do NOT use public/_redirects `/* /index.html 200` —
+# Advanced Mode flags that as an infinite loop and ignores it.
+const indexHtml = path.join(DIST, "index.html")
+if (fs.existsSync(indexHtml)) {
+  fs.copyFileSync(indexHtml, path.join(DIST, "404.html"))
+  console.log("→ dist/404.html (= index.html) for SPA deep links")
+}
+const redirects = path.join(DIST, "_redirects")
+if (fs.existsSync(redirects)) {
+  const text = fs.readFileSync(redirects, "utf8")
+  if (/^\s*\/\*\s+/m.test(text)) {
+    console.warn("→ stripping SPA /* rewrite from dist/_redirects (CF infinite-loop rule)")
+    fs.writeFileSync(
+      redirects,
+      text
+        .split("\n")
+        .filter((line) => !/^\s*\/\*\s+/.test(line))
+        .join("\n"),
+    )
+  }
+}
+
 console.log("Done. Pages build output: apps/web/dist")

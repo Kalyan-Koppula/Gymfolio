@@ -1,0 +1,7 @@
+# Cloudflare Pages — used by `wrangler pages deploy` (staging:deploy:web).
+# Connect-to-Git / CLI both publish apps/web/dist from `pnpm pages:build`.
+#
+# SPA deep links: do not use `/* /index.html 200` in `_redirects` (Advanced Mode
+# treats that as an infinite loop). `pages:build` copies index.html → 404.html.
+name = "gymfolio-web-staging"
+pages_build_output_dir = "dist"

@@ -88,7 +88,7 @@ export function AppLockSettingsScreen() {
             <div className="min-w-0">
               <p className="text-sm font-medium">Lock on sleep</p>
               <p className="text-xs text-muted-foreground">
-                Ask for biometrics or PIN when you reopen the app
+                Ask for biometrics or PIN when returning from background (not on refresh)
               </p>
             </div>
             <Switch

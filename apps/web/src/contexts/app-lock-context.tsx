@@ -23,9 +23,13 @@ type AppLockState = {
 
 const AppLockContext = React.createContext<AppLockState | null>(null)
 
+/** Ignore tiny hide→show flickers (e.g. OS overlays); real background switches are longer. */
+const MIN_BACKGROUND_MS = 400
+
 /**
  * Device app lock (opt-in "lock on sleep"):
  * - Armed only when the user enables it and sets a local PIN
+ * - Locks when the tab/app returns from background — not on in-tab refresh
  * - Unlock with Face ID / Touch ID when passkeys exist + WebAuthn works
  * - Always allow PIN as fallback (like Android)
  * Session cookie is never cleared by lock/unlock.
@@ -38,7 +42,8 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = React.useState<string | null>(null)
   const [hasPasskey, setHasPasskey] = React.useState(false)
   const [pin, setPin] = React.useState("")
-  const wasHidden = React.useRef(false)
+  /** Timestamp when the document last went hidden; null if never / cancelled by unload. */
+  const hiddenAt = React.useRef<number | null>(null)
   const autoPrompted = React.useRef(false)
 
   const refreshSettings = React.useCallback(() => {
@@ -68,52 +73,55 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
       .catch(() => setHasPasskey(false))
   }, [user?.id])
 
-  // Cold start: lock if armed.
+  // Disarming clears the gate; enabling does not lock until the next background return.
   React.useEffect(() => {
-    if (!user || loading) return
-    if (armed) {
-      setLocked(true)
-      setError(null)
-      setPin("")
-      autoPrompted.current = false
-    } else {
-      setLocked(false)
-    }
-  }, [user?.id, loading, armed])
+    if (!armed) setLocked(false)
+  }, [armed])
 
-  // Background / sleep → lock when armed.
+  const engageLock = React.useCallback(() => {
+    if (!isAppLockArmed()) return
+    autoPrompted.current = false
+    setLocked(true)
+    setError(null)
+    setPin("")
+  }, [])
+
+  // Lock only after a real background → foreground transition (not refresh / cold load).
   React.useEffect(() => {
     if (!user) return
+
     const onVisibility = () => {
       if (document.visibilityState === "hidden") {
-        wasHidden.current = true
+        hiddenAt.current = Date.now()
         return
       }
-      if (document.visibilityState === "visible" && wasHidden.current) {
-        wasHidden.current = false
-        if (isAppLockArmed()) {
-          autoPrompted.current = false
-          setLocked(true)
-          setError(null)
-          setPin("")
-        }
-      }
+      if (document.visibilityState !== "visible" || hiddenAt.current == null) return
+      const elapsed = Date.now() - hiddenAt.current
+      hiddenAt.current = null
+      if (elapsed < MIN_BACKGROUND_MS) return
+      engageLock()
     }
+
+    // Refresh / close / navigate away: visibility often goes "hidden" first.
+    // Clear that so a same-tab reload does not treat the load as "returned from background".
+    const onPageHide = (e: PageTransitionEvent) => {
+      if (!e.persisted) hiddenAt.current = null
+    }
+
+    // Restored from bfcache after the user left the page.
     const onPageShow = (e: PageTransitionEvent) => {
-      if (e.persisted && isAppLockArmed()) {
-        autoPrompted.current = false
-        setLocked(true)
-        setError(null)
-        setPin("")
-      }
+      if (e.persisted) engageLock()
     }
+
     document.addEventListener("visibilitychange", onVisibility)
+    window.addEventListener("pagehide", onPageHide)
     window.addEventListener("pageshow", onPageShow)
     return () => {
       document.removeEventListener("visibilitychange", onVisibility)
+      window.removeEventListener("pagehide", onPageHide)
       window.removeEventListener("pageshow", onPageShow)
     }
-  }, [user?.id])
+  }, [user?.id, engageLock])
 
   const unlockWithBiometric = React.useCallback(async () => {
     if (!user) return

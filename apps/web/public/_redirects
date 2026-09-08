@@ -1,3 +1,8 @@
-# SPA fallback. Pages Functions handle /api/* when the Functions bundle is present.
-# See public/_routes.json (include: /api/*).
-/*    /index.html   200
+# SPA fallback used to live here as `/* /index.html 200`.
+# Cloudflare Pages (Advanced Mode / _worker.js) treats that as an infinite loop and
+# ignores it — see deploy logs: "Infinite loop detected in this rule".
+#
+# SPA routing is handled by:
+#   - dist/404.html (= index.html) for Connect-to-Git / asset 404s
+#   - [assets] not_found_handling = "single-page-application" in wrangler.toml (CLI deploy)
+# /api/* stays on Pages Functions via _routes.json + _worker.js.

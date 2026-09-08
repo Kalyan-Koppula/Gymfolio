@@ -25,6 +25,7 @@ import { SettingsHome } from "@/screens/settings/settings-home"
 import { AiProviderSettings } from "@/screens/settings/ai-provider-settings"
 import { AppearanceSettings } from "@/screens/settings/appearance-settings"
 import { AccountSessions } from "@/screens/settings/account-sessions"
+import { AppLockSettingsScreen } from "@/screens/settings/app-lock-settings"
 import { Family } from "@/screens/settings/family"
 
 function App() {
@@ -59,6 +60,7 @@ function App() {
           <Route path="/settings" element={<SettingsHome />} />
           <Route path="/settings/ai" element={<AiProviderSettings />} />
           <Route path="/settings/appearance" element={<AppearanceSettings />} />
+          <Route path="/settings/lock" element={<AppLockSettingsScreen />} />
           <Route path="/settings/account" element={<AccountSessions />} />
           <Route path="/settings/family" element={<Family />} />
         </Route>

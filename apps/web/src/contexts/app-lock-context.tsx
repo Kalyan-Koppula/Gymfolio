@@ -1,68 +1,87 @@
 import * as React from "react"
 import { startAuthentication, browserSupportsWebAuthn } from "@simplewebauthn/browser"
-import { Fingerprint, Loader2, LogOut, Shield } from "lucide-react"
+import { Delete, Fingerprint, Loader2, LogOut, Shield } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useSession } from "@/contexts/session-context"
 import { logout, passkeyUnlockOptions, passkeyUnlockVerify, ApiError, listPasskeys } from "@/lib/api-client"
 import { getPreferredPasskey, rememberPasskey } from "@/lib/passkey-preference"
+import {
+  isAppLockArmed,
+  readAppLockSettings,
+  verifyAppLockPin,
+  type AppLockSettings,
+} from "@/lib/app-lock-settings"
 import { APP_NAME } from "@/lib/brand"
+import { cn } from "@/lib/utils"
 
 type AppLockState = {
   locked: boolean
-  unlock: () => Promise<void>
+  unlockWithBiometric: () => Promise<void>
+  settings: AppLockSettings
+  refreshSettings: () => void
 }
 
 const AppLockContext = React.createContext<AppLockState | null>(null)
 
 /**
- * Android-style app lock — only when the account has a passkey.
- * Password-only / web users with no passkey skip the gate entirely.
+ * Device app lock (opt-in "lock on sleep"):
+ * - Armed only when the user enables it and sets a local PIN
+ * - Unlock with Face ID / Touch ID when passkeys exist + WebAuthn works
+ * - Always allow PIN as fallback (like Android)
  * Session cookie is never cleared by lock/unlock.
  */
 export function AppLockProvider({ children }: { children: React.ReactNode }) {
   const { user, loading, setUser } = useSession()
+  const [settings, setSettings] = React.useState<AppLockSettings>(() => readAppLockSettings())
   const [locked, setLocked] = React.useState(false)
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
-  /** null = still checking; true = must unlock; false = no passkey → never lock */
-  const [hasPasskey, setHasPasskey] = React.useState<boolean | null>(null)
-  const [checkingPasskeys, setCheckingPasskeys] = React.useState(false)
+  const [hasPasskey, setHasPasskey] = React.useState(false)
+  const [pin, setPin] = React.useState("")
   const wasHidden = React.useRef(false)
   const autoPrompted = React.useRef(false)
 
-  // Resolve whether this account uses biometrics. No passkey → stay unlocked.
+  const refreshSettings = React.useCallback(() => {
+    setSettings(readAppLockSettings())
+  }, [])
+
+  React.useEffect(() => {
+    const onChange = () => refreshSettings()
+    window.addEventListener("gymfolio:app-lock-changed", onChange)
+    return () => window.removeEventListener("gymfolio:app-lock-changed", onChange)
+  }, [refreshSettings])
+
+  const armed = isAppLockArmed(settings)
+  const biometricAvailable =
+    settings.preferBiometric && hasPasskey && browserSupportsWebAuthn()
+
+  // Track passkeys for biometric unlock (optional).
   React.useEffect(() => {
     if (!user) {
+      setHasPasskey(false)
       setLocked(false)
-      setHasPasskey(null)
-      setCheckingPasskeys(false)
+      setPin("")
       return
     }
-    let cancelled = false
-    setCheckingPasskeys(true)
-    setError(null)
     listPasskeys()
-      .then((res) => {
-        if (cancelled) return
-        const ok = res.passkeys.length > 0
-        setHasPasskey(ok)
-        setLocked(ok) // only gate if they can unlock with a passkey
-      })
-      .catch(() => {
-        if (cancelled) return
-        // Fail open: don't trap password-only users behind a lock screen.
-        setHasPasskey(false)
-        setLocked(false)
-      })
-      .finally(() => {
-        if (!cancelled) setCheckingPasskeys(false)
-      })
-    return () => {
-      cancelled = true
-    }
+      .then((res) => setHasPasskey(res.passkeys.length > 0))
+      .catch(() => setHasPasskey(false))
   }, [user?.id])
 
-  // Resume from background → re-lock only when biometrics are set up.
+  // Cold start: lock if armed.
+  React.useEffect(() => {
+    if (!user || loading) return
+    if (armed) {
+      setLocked(true)
+      setError(null)
+      setPin("")
+      autoPrompted.current = false
+    } else {
+      setLocked(false)
+    }
+  }, [user?.id, loading, armed])
+
+  // Background / sleep → lock when armed.
   React.useEffect(() => {
     if (!user) return
     const onVisibility = () => {
@@ -72,18 +91,20 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
       }
       if (document.visibilityState === "visible" && wasHidden.current) {
         wasHidden.current = false
-        if (hasPasskey) {
+        if (isAppLockArmed()) {
           autoPrompted.current = false
           setLocked(true)
           setError(null)
+          setPin("")
         }
       }
     }
     const onPageShow = (e: PageTransitionEvent) => {
-      if (e.persisted && hasPasskey) {
+      if (e.persisted && isAppLockArmed()) {
         autoPrompted.current = false
         setLocked(true)
         setError(null)
+        setPin("")
       }
     }
     document.addEventListener("visibilitychange", onVisibility)
@@ -92,12 +113,12 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
       document.removeEventListener("visibilitychange", onVisibility)
       window.removeEventListener("pageshow", onPageShow)
     }
-  }, [user?.id, hasPasskey])
+  }, [user?.id])
 
-  const unlock = React.useCallback(async () => {
+  const unlockWithBiometric = React.useCallback(async () => {
     if (!user) return
     if (!browserSupportsWebAuthn()) {
-      setError("This device doesn't support biometrics in the browser.")
+      setError("Biometrics aren't available on this device — use your PIN.")
       return
     }
     setBusy(true)
@@ -111,85 +132,171 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
       await passkeyUnlockVerify(flowId, response)
       rememberPasskey(response.id, preferred?.transports)
       setLocked(false)
+      setPin("")
     } catch (err) {
       if (err instanceof Error && err.name === "NotAllowedError") {
-        setError("Unlock cancelled.")
-      } else if (
-        err instanceof ApiError &&
-        (err.message.includes("no_passkey") || err.message.includes("Add a passkey"))
-      ) {
-        // Account has no passkeys — drop the gate.
+        setError("Biometric unlock cancelled — enter your PIN.")
+      } else if (err instanceof ApiError && err.message.includes("no_passkey")) {
         setHasPasskey(false)
-        setLocked(false)
+        setError("No passkey on this account — unlock with PIN.")
       } else {
-        setError(err instanceof ApiError ? err.message : "Couldn't unlock — try again.")
+        setError(err instanceof ApiError ? err.message : "Biometric unlock failed — try PIN.")
       }
     } finally {
       setBusy(false)
     }
   }, [user])
 
-  // Auto-prompt once when a biometric lock screen appears.
+  async function unlockWithPin(nextPin: string) {
+    setBusy(true)
+    setError(null)
+    try {
+      const ok = await verifyAppLockPin(nextPin)
+      if (!ok) {
+        setError("Incorrect PIN")
+        setPin("")
+        return
+      }
+      setLocked(false)
+      setPin("")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Auto-verify when PIN reaches the configured length.
   React.useEffect(() => {
-    if (!user || !locked || hasPasskey !== true) {
+    if (!locked) return
+    const need = settings.pinLength ?? 4
+    if (pin.length !== need) return
+    const t = window.setTimeout(() => {
+      void unlockWithPin(pin)
+    }, 120)
+    return () => window.clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pin, locked, settings.pinLength])
+
+  function onDigit(d: string) {
+    if (busy) return
+    setError(null)
+    const need = settings.pinLength ?? 8
+    setPin((prev) => (prev + d).slice(0, need))
+  }
+
+  React.useEffect(() => {
+    if (!user || !locked || !biometricAvailable) {
       if (!locked) autoPrompted.current = false
       return
     }
     if (loading || busy || autoPrompted.current) return
     autoPrompted.current = true
     const t = window.setTimeout(() => {
-      void unlock()
-    }, 280)
+      void unlockWithBiometric()
+    }, 320)
     return () => window.clearTimeout(t)
-  }, [user, locked, loading, hasPasskey, busy, unlock])
+  }, [user, locked, biometricAvailable, loading, busy, unlockWithBiometric])
 
   async function handleLogout() {
     try {
       await logout()
     } catch {
-      /* still clear local */
+      /* ignore */
     }
     setUser(null)
     setLocked(false)
+    setPin("")
   }
 
-  const showGate = Boolean(user) && !loading && hasPasskey === true && locked
+  const showGate = Boolean(user) && !loading && armed && locked
   const value = React.useMemo(
-    () => ({ locked: showGate, unlock }),
-    [showGate, unlock],
+    () => ({
+      locked: showGate,
+      unlockWithBiometric,
+      settings,
+      refreshSettings,
+    }),
+    [showGate, unlockWithBiometric, settings, refreshSettings],
   )
 
   return (
     <AppLockContext.Provider value={value}>
       {children}
-      {user && !loading && checkingPasskeys ? (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
-        </div>
-      ) : null}
       {showGate ? (
         <div
-          className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-6 bg-background px-6"
+          className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-5 bg-background px-6"
           style={{ paddingTop: "var(--safe-top)", paddingBottom: "var(--safe-bottom)" }}
         >
-          <div className="flex size-16 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
-            <Shield className="size-8" />
+          <div className="flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
+            <Shield className="size-7" />
           </div>
           <div className="space-y-1 text-center">
             <p className="font-heading text-xl font-semibold tracking-tight">{APP_NAME}</p>
-            <p className="text-sm text-muted-foreground">Unlock with Face ID / Touch ID to continue</p>
+            <p className="text-sm text-muted-foreground">
+              {biometricAvailable ? "Unlock with biometrics or PIN" : "Enter your PIN to continue"}
+            </p>
             {user?.username ? (
               <p className="text-xs text-muted-foreground">Signed in as {user.username}</p>
             ) : null}
           </div>
 
+          <div className="flex gap-2">
+            {Array.from({ length: settings.pinLength ?? 4 }).map((_, i) => (
+              <span
+                key={i}
+                className={cn(
+                  "size-2.5 rounded-full border border-border transition-colors",
+                  i < pin.length ? "bg-primary border-primary" : "bg-transparent",
+                )}
+              />
+            ))}
+          </div>
+
           {error ? <p className="max-w-xs text-center text-sm text-destructive">{error}</p> : null}
 
+          <div className="grid w-full max-w-[240px] grid-cols-3 gap-2">
+            {["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "del"].map((key) => {
+              if (key === "") return <span key="pad" />
+              if (key === "del") {
+                return (
+                  <Button
+                    key="del"
+                    type="button"
+                    variant="ghost"
+                    className="h-14"
+                    disabled={busy}
+                    onClick={() => setPin((p) => p.slice(0, -1))}
+                    aria-label="Delete"
+                  >
+                    <Delete className="size-5" />
+                  </Button>
+                )
+              }
+              return (
+                <Button
+                  key={key}
+                  type="button"
+                  variant="outline"
+                  className="h-14 text-lg font-semibold"
+                  disabled={busy}
+                  onClick={() => onDigit(key)}
+                >
+                  {key}
+                </Button>
+              )
+            })}
+          </div>
+
           <div className="flex w-full max-w-sm flex-col gap-2">
-            <Button className="h-12 w-full text-base" disabled={busy} onClick={() => void unlock()}>
-              {busy ? <Loader2 className="size-4 animate-spin" /> : <Fingerprint className="size-5" />}
-              {busy ? "Waiting…" : "Unlock"}
-            </Button>
+            {biometricAvailable ? (
+              <Button
+                className="h-12 w-full text-base"
+                disabled={busy}
+                onClick={() => void unlockWithBiometric()}
+              >
+                {busy ? <Loader2 className="size-4 animate-spin" /> : <Fingerprint className="size-5" />}
+                {busy ? "Waiting…" : "Use Face ID / Touch ID"}
+              </Button>
+            ) : null}
             <Button variant="ghost" className="h-11 w-full" onClick={() => void handleLogout()}>
               <LogOut className="size-4" /> Sign out
             </Button>

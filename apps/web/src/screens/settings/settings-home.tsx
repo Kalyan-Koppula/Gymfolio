@@ -1,11 +1,12 @@
 import { Link } from "react-router-dom"
-import { ChevronRight, KeyRound, Palette, ShieldCheck, Users } from "lucide-react"
+import { ChevronRight, KeyRound, Lock, Palette, ShieldCheck, Users } from "lucide-react"
 import { TopBar } from "@/components/nav/top-bar"
 import { useSession } from "@/contexts/session-context"
 
 const ITEMS = [
   { to: "/settings/ai", icon: KeyRound, label: "AI provider", desc: "Bring-your-own-key configuration" },
   { to: "/settings/appearance", icon: Palette, label: "Appearance", desc: "Theme, radius, font pairing" },
+  { to: "/settings/lock", icon: Lock, label: "App lock", desc: "Lock on sleep — biometrics or PIN" },
   { to: "/settings/account", icon: ShieldCheck, label: "Account & sessions", desc: "Passkeys, password, active devices" },
 ]
 

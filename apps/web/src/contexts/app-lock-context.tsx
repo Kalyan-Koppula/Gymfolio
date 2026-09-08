@@ -15,32 +15,54 @@ type AppLockState = {
 const AppLockContext = React.createContext<AppLockState | null>(null)
 
 /**
- * Android-style app lock: session cookie stays; UI is gated until Face ID / fingerprint
- * succeeds. Locks on cold start and whenever the PWA returns from background.
+ * Android-style app lock — only when the account has a passkey.
+ * Password-only / web users with no passkey skip the gate entirely.
+ * Session cookie is never cleared by lock/unlock.
  */
 export function AppLockProvider({ children }: { children: React.ReactNode }) {
   const { user, loading, setUser } = useSession()
-  const [locked, setLocked] = React.useState(true)
+  const [locked, setLocked] = React.useState(false)
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  /** null = still checking; true = must unlock; false = no passkey → never lock */
   const [hasPasskey, setHasPasskey] = React.useState<boolean | null>(null)
+  const [checkingPasskeys, setCheckingPasskeys] = React.useState(false)
   const wasHidden = React.useRef(false)
+  const autoPrompted = React.useRef(false)
 
-  // Cold start / new session user → always locked.
+  // Resolve whether this account uses biometrics. No passkey → stay unlocked.
   React.useEffect(() => {
     if (!user) {
       setLocked(false)
       setHasPasskey(null)
+      setCheckingPasskeys(false)
       return
     }
-    setLocked(true)
+    let cancelled = false
+    setCheckingPasskeys(true)
     setError(null)
     listPasskeys()
-      .then((res) => setHasPasskey(res.passkeys.length > 0))
-      .catch(() => setHasPasskey(false))
+      .then((res) => {
+        if (cancelled) return
+        const ok = res.passkeys.length > 0
+        setHasPasskey(ok)
+        setLocked(ok) // only gate if they can unlock with a passkey
+      })
+      .catch(() => {
+        if (cancelled) return
+        // Fail open: don't trap password-only users behind a lock screen.
+        setHasPasskey(false)
+        setLocked(false)
+      })
+      .finally(() => {
+        if (!cancelled) setCheckingPasskeys(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [user?.id])
 
-  // Resume from background → lock again (like leaving an Android app).
+  // Resume from background → re-lock only when biometrics are set up.
   React.useEffect(() => {
     if (!user) return
     const onVisibility = () => {
@@ -50,12 +72,16 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
       }
       if (document.visibilityState === "visible" && wasHidden.current) {
         wasHidden.current = false
-        setLocked(true)
-        setError(null)
+        if (hasPasskey) {
+          autoPrompted.current = false
+          setLocked(true)
+          setError(null)
+        }
       }
     }
     const onPageShow = (e: PageTransitionEvent) => {
-      if (e.persisted) {
+      if (e.persisted && hasPasskey) {
+        autoPrompted.current = false
         setLocked(true)
         setError(null)
       }
@@ -66,7 +92,7 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
       document.removeEventListener("visibilitychange", onVisibility)
       window.removeEventListener("pageshow", onPageShow)
     }
-  }, [user?.id])
+  }, [user?.id, hasPasskey])
 
   const unlock = React.useCallback(async () => {
     if (!user) return
@@ -92,8 +118,9 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
         err instanceof ApiError &&
         (err.message.includes("no_passkey") || err.message.includes("Add a passkey"))
       ) {
+        // Account has no passkeys — drop the gate.
         setHasPasskey(false)
-        setError("Add a passkey in Settings → Account, then reopen to unlock with biometrics.")
+        setLocked(false)
       } else {
         setError(err instanceof ApiError ? err.message : "Couldn't unlock — try again.")
       }
@@ -102,14 +129,13 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user])
 
-  // Auto-prompt once when the lock screen appears (Android-like).
-  const autoPrompted = React.useRef(false)
+  // Auto-prompt once when a biometric lock screen appears.
   React.useEffect(() => {
-    if (!user || !locked) {
-      autoPrompted.current = false
+    if (!user || !locked || hasPasskey !== true) {
+      if (!locked) autoPrompted.current = false
       return
     }
-    if (loading || hasPasskey !== true || busy || autoPrompted.current) return
+    if (loading || busy || autoPrompted.current) return
     autoPrompted.current = true
     const t = window.setTimeout(() => {
       void unlock()
@@ -127,12 +153,21 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
     setLocked(false)
   }
 
-  const value = React.useMemo(() => ({ locked: Boolean(user) && locked, unlock }), [user, locked, unlock])
+  const showGate = Boolean(user) && !loading && hasPasskey === true && locked
+  const value = React.useMemo(
+    () => ({ locked: showGate, unlock }),
+    [showGate, unlock],
+  )
 
   return (
     <AppLockContext.Provider value={value}>
       {children}
-      {user && locked && !loading ? (
+      {user && !loading && checkingPasskeys ? (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background">
+          <Loader2 className="size-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : null}
+      {showGate ? (
         <div
           className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-6 bg-background px-6"
           style={{ paddingTop: "var(--safe-top)", paddingBottom: "var(--safe-bottom)" }}
@@ -142,11 +177,7 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
           </div>
           <div className="space-y-1 text-center">
             <p className="font-heading text-xl font-semibold tracking-tight">{APP_NAME}</p>
-            <p className="text-sm text-muted-foreground">
-              {hasPasskey === false
-                ? "Set up Face ID / Touch ID in Settings → Account to unlock."
-                : "Unlock with Face ID / Touch ID to continue"}
-            </p>
+            <p className="text-sm text-muted-foreground">Unlock with Face ID / Touch ID to continue</p>
             {user.username ? (
               <p className="text-xs text-muted-foreground">Signed in as {user.username}</p>
             ) : null}
@@ -155,16 +186,10 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
           {error ? <p className="max-w-xs text-center text-sm text-destructive">{error}</p> : null}
 
           <div className="flex w-full max-w-sm flex-col gap-2">
-            {hasPasskey !== false ? (
-              <Button className="h-12 w-full text-base" disabled={busy} onClick={() => void unlock()}>
-                {busy ? <Loader2 className="size-4 animate-spin" /> : <Fingerprint className="size-5" />}
-                {busy ? "Waiting…" : "Unlock"}
-              </Button>
-            ) : (
-              <Button className="h-12 w-full text-base" onClick={() => setLocked(false)}>
-                Continue without biometrics
-              </Button>
-            )}
+            <Button className="h-12 w-full text-base" disabled={busy} onClick={() => void unlock()}>
+              {busy ? <Loader2 className="size-4 animate-spin" /> : <Fingerprint className="size-5" />}
+              {busy ? "Waiting…" : "Unlock"}
+            </Button>
             <Button variant="ghost" className="h-11 w-full" onClick={() => void handleLogout()}>
               <LogOut className="size-4" /> Sign out
             </Button>

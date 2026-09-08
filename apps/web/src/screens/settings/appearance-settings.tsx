@@ -1,4 +1,3 @@
-import { useTheme } from "next-themes"
 import { TopBar } from "@/components/nav/top-bar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
@@ -23,7 +22,6 @@ const PALETTES: Array<{ id: Palette; label: string; swatch: string }> = [
 ]
 
 export function AppearanceSettings() {
-  const { theme } = useTheme()
   const {
     palette,
     setPalette,
@@ -32,6 +30,7 @@ export function AppearanceSettings() {
     fontPairing,
     setFontPairing,
     setModePreview,
+    mode,
     dirty,
     saving,
     saveError,
@@ -49,8 +48,8 @@ export function AppearanceSettings() {
       <TopBar title="Appearance" back />
       <div className="space-y-5 px-4 py-4 pb-28">
         <p className="text-xs text-muted-foreground">
-          Preview changes instantly on this device. Tap Save to sync them to your account — browsing
-          options before Save never hits the network.
+          Mode applies immediately. Palette, radius, and fonts preview here — tap Save to sync those
+          to your account.
         </p>
 
         <Card>
@@ -68,11 +67,11 @@ export function AppearanceSettings() {
                   onClick={() => setModePreview(m.id)}
                   className="flex h-16 flex-col items-center justify-center gap-1 rounded-lg border text-xs font-medium transition-all duration-150 active:scale-95"
                   style={{
-                    borderColor: theme === m.id ? "var(--primary)" : "var(--border)",
-                    backgroundColor: theme === m.id ? "var(--accent)" : "transparent",
+                    borderColor: mode === m.id ? "var(--primary)" : "var(--border)",
+                    backgroundColor: mode === m.id ? "var(--accent)" : "transparent",
                   }}
                 >
-                  <m.icon className={cn("size-4 transition-transform duration-200", theme === m.id && "scale-110")} />
+                  <m.icon className={cn("size-4 transition-transform duration-200", mode === m.id && "scale-110")} />
                   {m.label}
                 </button>
               ))}

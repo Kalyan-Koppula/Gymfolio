@@ -14,7 +14,7 @@ type AppearanceState = {
   setRadius: (r: number) => void
   fontPairing: FontPairingLocal
   setFontPairing: (f: FontPairingLocal) => void
-  /** Instant local preview only — does not hit the network. */
+  /** Instant preview + persist mode (local + account when logged in). */
   setModePreview: (mode: ThemeMode) => void
   mode: ThemeMode
   /** True when draft differs from last persisted / server snapshot. */
@@ -67,6 +67,7 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
   const [palette, setPaletteState] = React.useState<Palette>(stored?.palette ?? "zinc")
   const [radius, setRadiusState] = React.useState<number>(stored?.radius ?? 0.625)
   const [fontPairing, setFontPairingState] = React.useState<FontPairingLocal>(stored?.fontPairing ?? "sans")
+  const [modeDraft, setModeDraft] = React.useState<ThemeMode | null>(stored?.mode ?? null)
   const [hydratedFromServer, setHydratedFromServer] = React.useState(false)
   const [dirty, setDirty] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
@@ -84,6 +85,21 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
     mode: (stored?.mode as ThemeMode) ?? "system",
   })
   const saveAbort = React.useRef<AbortController | null>(null)
+  /** User tapped a mode this session — hydrate must not clobber it. */
+  const modeTouched = React.useRef(Boolean(stored?.mode && stored.mode !== "system"))
+  const hydratedOnce = React.useRef(false)
+
+  const effectiveMode: ThemeMode =
+    modeDraft ?? ((theme as ThemeMode | undefined) ?? "system")
+
+  // Apply cached mode before D1 hydrate so Light/Dark survive reloads.
+  React.useEffect(() => {
+    if (stored?.mode) {
+      setTheme(stored.mode)
+      setModeDraft(stored.mode)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cold start only
+  }, [])
 
   // Instant CSS preview — never persists.
   React.useEffect(() => {
@@ -94,10 +110,12 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
   React.useEffect(() => {
     if (sessionLoading) return
     if (!user) return
+    if (hydratedOnce.current) return
     let cancelled = false
     getThemePreference()
       .then(({ theme: t }) => {
         if (cancelled) return
+        hydratedOnce.current = true
         committed.current = {
           palette: t.themeId,
           radius: t.radius,
@@ -107,13 +125,24 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
         setPaletteState(t.themeId)
         setRadiusState(t.radius)
         setFontPairingState(t.fontPairing)
-        setTheme(t.mode)
-        writeStored({
-          palette: t.themeId,
-          radius: t.radius,
-          fontPairing: t.fontPairing,
-          mode: t.mode,
-        })
+        // Don't overwrite a mode the user already chose (or cached locally).
+        if (!modeTouched.current) {
+          setTheme(t.mode)
+          setModeDraft(t.mode)
+          writeStored({
+            palette: t.themeId,
+            radius: t.radius,
+            fontPairing: t.fontPairing,
+            mode: t.mode,
+          })
+        } else {
+          writeStored({
+            palette: t.themeId,
+            radius: t.radius,
+            fontPairing: t.fontPairing,
+            mode: modeDraft ?? t.mode,
+          })
+        }
         setDirty(false)
         setHydratedFromServer(true)
       })
@@ -123,18 +152,18 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
     return () => {
       cancelled = true
     }
-  }, [user, sessionLoading, setTheme])
+  }, [user, sessionLoading, setTheme, modeDraft])
 
   const markDirtyIfNeeded = React.useCallback(() => {
     const c = committed.current
-    const mode = (theme as ThemeMode) ?? "system"
+    const mode = effectiveMode
     setDirty(
       palette !== c.palette ||
         radius !== c.radius ||
         fontPairing !== c.fontPairing ||
         mode !== c.mode,
     )
-  }, [palette, radius, fontPairing, theme])
+  }, [palette, radius, fontPairing, effectiveMode])
 
   React.useEffect(() => {
     markDirtyIfNeeded()
@@ -142,7 +171,6 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
 
   const setPalette = React.useCallback((p: Palette) => {
     setPaletteState(p)
-    // Preview only — localStorage updated on Save so a reload before Save restores committed.
   }, [])
 
   const setRadius = React.useCallback((r: number) => {
@@ -155,16 +183,35 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
 
   const setModePreview = React.useCallback(
     (mode: ThemeMode) => {
+      modeTouched.current = true
+      setModeDraft(mode)
       setTheme(mode)
+      writeStored({ palette, radius, fontPairing, mode })
+      // Persist mode to account immediately so hydrate / other devices don't snap back to system.
+      if (user) {
+        void saveThemePreference({
+          themeId: palette,
+          mode,
+          radius,
+          fontPairing,
+        })
+          .then(() => {
+            committed.current = { ...committed.current, mode, palette, radius, fontPairing }
+          })
+          .catch(() => {
+            /* Save bar still available for retry */
+          })
+      } else {
+        committed.current = { ...committed.current, mode }
+      }
     },
-    [setTheme],
+    [setTheme, palette, radius, fontPairing, user],
   )
 
   const saveAppearance = React.useCallback(async () => {
-    const mode = (theme as ThemeMode) ?? "system"
+    const mode = effectiveMode
     const next = { palette, radius, fontPairing, mode }
 
-    // Always update paint cache on explicit save (even if logged out — rare).
     writeStored(next)
 
     if (!user) {
@@ -202,7 +249,7 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
       setSaveError(err instanceof Error ? err.message : "Couldn't save appearance")
       return false
     }
-  }, [palette, radius, fontPairing, theme, user])
+  }, [palette, radius, fontPairing, effectiveMode, user])
 
   const value = React.useMemo(
     () => ({
@@ -213,7 +260,7 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
       fontPairing,
       setFontPairing,
       setModePreview,
-      mode: ((theme as ThemeMode) ?? "system") as ThemeMode,
+      mode: effectiveMode,
       dirty,
       saving,
       saveError,
@@ -228,7 +275,7 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
       fontPairing,
       setFontPairing,
       setModePreview,
-      theme,
+      effectiveMode,
       dirty,
       saving,
       saveError,

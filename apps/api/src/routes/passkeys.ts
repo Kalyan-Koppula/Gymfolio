@@ -192,6 +192,93 @@ route.post("/login-verify", async (c) => {
   return c.json({ user: serializeUser(user) })
 })
 
+/**
+ * App lock — assert a passkey for the *current* session user without minting a new session.
+ * Used when the PWA opens / resumes (Android-style biometric gate).
+ */
+route.post("/unlock-options", requireAuth, async (c) => {
+  const { userId } = c.get("auth")
+  const db = getDb(c.env.DB)
+  const existing = await db.select().from(credentials).where(eq(credentials.userId, userId))
+  if (existing.length === 0) {
+    return c.json({ error: "no_passkey", message: "Add a passkey in Settings to unlock with biometrics." }, 400)
+  }
+
+  const { rpID } = webAuthnConfig(c.env)
+  const preferred = await c.req.json().catch(() => null)
+  const preferredIds = Array.isArray(preferred?.allowCredentialIds)
+    ? (preferred.allowCredentialIds as unknown[]).filter((id): id is string => typeof id === "string" && id.length > 0)
+    : []
+
+  let allowCredentials = existing.map((cred) => ({
+    id: cred.credentialId,
+    transports: parseTransports(cred.transports),
+  }))
+
+  // Prefer last-used credential on this device when known (skips account picker).
+  if (preferredIds.length > 0) {
+    const preferredOnly = allowCredentials.filter((c) => preferredIds.includes(c.id))
+    if (preferredOnly.length > 0) allowCredentials = preferredOnly
+  }
+
+  const options = await generateAuthenticationOptions({
+    rpID,
+    userVerification: "required",
+    allowCredentials,
+  })
+  const flowId = await storeChallenge(c.env.SESSIONS_KV, options.challenge, userId)
+  return c.json({ flowId, options })
+})
+
+route.post("/unlock-verify", requireAuth, async (c) => {
+  const { userId } = c.get("auth")
+  const body = await c.req.json().catch(() => null)
+  if (!body?.flowId || !body?.response?.id) return c.json({ error: "Missing flowId or response" }, 400)
+
+  const record = await consumeChallenge(c.env.SESSIONS_KV, body.flowId)
+  if (!record || record.userId !== userId) {
+    return c.json({ error: "Unlock session expired — try again" }, 400)
+  }
+
+  const db = getDb(c.env.DB)
+  const [cred] = await db
+    .select()
+    .from(credentials)
+    .where(and(eq(credentials.credentialId, body.response.id), eq(credentials.userId, userId)))
+    .limit(1)
+  if (!cred) return c.json({ error: "This passkey isn't registered for your account" }, 401)
+
+  const { rpID, origin } = webAuthnConfig(c.env)
+  const webAuthnCredential: WebAuthnCredential = {
+    id: cred.credentialId,
+    publicKey: isoBase64URL.toBuffer(cred.publicKey),
+    counter: cred.counter,
+    transports: parseTransports(cred.transports),
+  }
+
+  let verification
+  try {
+    verification = await verifyAuthenticationResponse({
+      response: body.response,
+      expectedChallenge: record.challenge,
+      expectedOrigin: origin,
+      expectedRPID: rpID,
+      credential: webAuthnCredential,
+    })
+  } catch {
+    return c.json({ error: "Unlock failed" }, 401)
+  }
+  if (!verification.verified) return c.json({ error: "Unlock failed" }, 401)
+
+  await db
+    .update(credentials)
+    .set({ counter: verification.authenticationInfo.newCounter, lastUsedAt: Date.now() })
+    .where(eq(credentials.id, cred.id))
+
+  // Session cookie unchanged — presence only.
+  return c.json({ ok: true })
+})
+
 /** List this account's registered passkeys (no sensitive credential material). */
 route.get("/", requireAuth, async (c) => {
   const { userId } = c.get("auth")

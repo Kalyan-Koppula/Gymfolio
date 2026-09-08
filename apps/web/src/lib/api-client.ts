@@ -211,6 +211,24 @@ export function passkeyLoginVerify(
   })
 }
 
+/** App lock — biometric assert without creating a new session. */
+export function passkeyUnlockOptions(opts?: { allowCredentialIds?: string[] }) {
+  return requestJson<{ flowId: string; options: PublicKeyCredentialRequestOptionsJSON }>(
+    "/auth/passkey/unlock-options",
+    {
+      method: "POST",
+      body: JSON.stringify({ allowCredentialIds: opts?.allowCredentialIds ?? [] }),
+    },
+  )
+}
+
+export function passkeyUnlockVerify(flowId: string, response: AuthenticationResponseJSON) {
+  return requestJson<{ ok: true }>("/auth/passkey/unlock-verify", {
+    method: "POST",
+    body: JSON.stringify({ flowId, response }),
+  })
+}
+
 export function listPasskeys() {
   return request("/auth/passkey", { method: "GET" }, z.object({ passkeys: z.array(PasskeyListItemSchema) }))
 }

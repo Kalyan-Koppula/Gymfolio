@@ -178,7 +178,7 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
           <div className="space-y-1 text-center">
             <p className="font-heading text-xl font-semibold tracking-tight">{APP_NAME}</p>
             <p className="text-sm text-muted-foreground">Unlock with Face ID / Touch ID to continue</p>
-            {user.username ? (
+            {user?.username ? (
               <p className="text-xs text-muted-foreground">Signed in as {user.username}</p>
             ) : null}
           </div>

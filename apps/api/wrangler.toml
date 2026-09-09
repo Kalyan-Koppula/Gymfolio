@@ -36,6 +36,9 @@ WEBAUTHN_RP_NAME = "Gymfolio"
 WEBAUTHN_ORIGIN = "http://localhost:5173"
 # Media: "r2" (Cloudflare R2 binding MEDIA) or "b2" (Backblaze — secrets in .dev.vars).
 MEDIA_BACKEND = "r2"
+# Optional: public CDN origin so /api/media 302s (no Worker byte-proxy).
+# MEDIA_PUBLIC_ORIGIN = "https://pub-xxxx.r2.dev"
+# or B2 friendly URL / custom domain on Cloudflare DNS (Bandwidth Alliance).
 
 # Declared secret names (values come from .dev.vars locally / Worker secrets remotely).
 [secrets]

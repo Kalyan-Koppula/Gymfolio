@@ -9,7 +9,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { APP_NAME } from "@/lib/brand"
 import { login, passkeyLoginOptions, passkeyLoginVerify, ApiError } from "@/lib/api-client"
 import { useOnlineStatus } from "@/hooks/use-online-status"
-import { useSession } from "@/contexts/session-context"
+import { useSession } from "@/hooks/use-session"
 import { getOrCreateDeviceKey } from "@/lib/device-key"
 import {
   clearPreferredPasskey,

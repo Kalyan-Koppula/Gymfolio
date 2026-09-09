@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useAtom } from "jotai"
 import { useWindowVirtualizer } from "@tanstack/react-virtual"
 import { ClipboardList, Filter, Search, Settings2, X } from "lucide-react"
 import { Link } from "react-router-dom"
@@ -19,6 +20,12 @@ import {
 import { EQUIPMENT_LABELS, type Equipment, type Exercise, type MuscleGroup } from "@/lib/stub-data"
 import { useExercises } from "@/hooks/use-exercises"
 import { Skeleton } from "@/components/ui/skeleton"
+import {
+  exerciseEquipmentFilterAtom,
+  exerciseMuscleFilterAtom,
+  exerciseSearchAtom,
+  toggleSetItem,
+} from "@/atoms/ui"
 
 const MUSCLE_GROUPS: MuscleGroup[] = ["chest", "back", "shoulders", "legs", "arms", "core", "glutes"]
 const EQUIPMENT = Object.keys(EQUIPMENT_LABELS) as Equipment[]
@@ -55,10 +62,15 @@ function VirtualExerciseGrid({ exercises }: { exercises: Exercise[] }) {
   React.useLayoutEffect(() => {
     const el = listRef.current
     if (!el) return
-    const sync = () => setScrollMargin(el.offsetTop)
+    // Document offset (not offsetTop) — offsetParent can be wrong with positioned ancestors.
+    const sync = () => {
+      const top = el.getBoundingClientRect().top + window.scrollY
+      setScrollMargin(top)
+    }
     sync()
     const ro = new ResizeObserver(sync)
     ro.observe(document.documentElement)
+    ro.observe(el)
     window.addEventListener("resize", sync)
     return () => {
       ro.disconnect()
@@ -93,9 +105,7 @@ function VirtualExerciseGrid({ exercises }: { exercises: Exercise[] }) {
               transform: `translateY(${virtualRow.start - scrollMargin}px)`,
             }}
           >
-            <div
-              className="grid grid-cols-1 gap-3 pb-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
-            >
+            <div className="grid grid-cols-1 gap-3 pb-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
               {rowItems.map((ex) => (
                 <ExerciseCard key={ex.id} exercise={ex} />
               ))}
@@ -109,9 +119,9 @@ function VirtualExerciseGrid({ exercises }: { exercises: Exercise[] }) {
 
 export function ExerciseLibrary() {
   const { exercises, loading } = useExercises()
-  const [query, setQuery] = React.useState("")
-  const [muscleFilter, setMuscleFilter] = React.useState<Set<MuscleGroup>>(new Set())
-  const [equipmentFilter, setEquipmentFilter] = React.useState<Set<Equipment>>(new Set())
+  const [query, setQuery] = useAtom(exerciseSearchAtom)
+  const [muscleFilter, setMuscleFilter] = useAtom(exerciseMuscleFilterAtom)
+  const [equipmentFilter, setEquipmentFilter] = useAtom(exerciseEquipmentFilterAtom)
 
   const filtered = (exercises ?? []).filter((ex) => {
     const matchesQuery = ex.name.toLowerCase().includes(query.toLowerCase())
@@ -121,13 +131,6 @@ export function ExerciseLibrary() {
   })
 
   const activeFilterCount = muscleFilter.size + equipmentFilter.size
-
-  function toggle<T>(set: Set<T>, setSet: (s: Set<T>) => void, val: T) {
-    const next = new Set(set)
-    if (next.has(val)) next.delete(val)
-    else next.add(val)
-    setSet(next)
-  }
 
   return (
     <div>
@@ -181,7 +184,7 @@ export function ExerciseLibrary() {
                       <FilterChip
                         key={m}
                         active={muscleFilter.has(m)}
-                        onClick={() => toggle(muscleFilter, setMuscleFilter, m)}
+                        onClick={() => setMuscleFilter((s) => toggleSetItem(s, m))}
                         label={m}
                       />
                     ))}
@@ -196,7 +199,7 @@ export function ExerciseLibrary() {
                       <FilterChip
                         key={e}
                         active={equipmentFilter.has(e)}
-                        onClick={() => toggle(equipmentFilter, setEquipmentFilter, e)}
+                        onClick={() => setEquipmentFilter((s) => toggleSetItem(s, e))}
                         label={EQUIPMENT_LABELS[e]}
                       />
                     ))}

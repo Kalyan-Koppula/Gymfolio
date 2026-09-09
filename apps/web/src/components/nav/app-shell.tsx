@@ -2,7 +2,7 @@ import { useLocation } from "react-router-dom"
 import { BottomTabBar, TAB_BAR_CLEARANCE } from "@/components/nav/bottom-tab-bar"
 import { PageTransition } from "@/components/nav/page-transition"
 import { RESUME_BAR_HEIGHT, WorkoutResumeBar } from "@/components/nav/workout-resume-bar"
-import { WorkoutSessionProvider, useWorkoutSession } from "@/contexts/workout-session-context"
+import { useWorkoutSession } from "@/hooks/use-workout-session"
 import { APP_FRAME } from "@/lib/app-frame"
 import { cn } from "@/lib/utils"
 
@@ -10,14 +10,6 @@ import { cn } from "@/lib/utils"
 const FULL_SCREEN_PATHS = ["/train/workout"]
 
 export function AppShell() {
-  return (
-    <WorkoutSessionProvider>
-      <AppShellLayout />
-    </WorkoutSessionProvider>
-  )
-}
-
-function AppShellLayout() {
   const location = useLocation()
   const { workout } = useWorkoutSession()
   const fullScreen = FULL_SCREEN_PATHS.includes(location.pathname)

@@ -27,6 +27,7 @@ app.get("/api/health", (c) =>
   c.json({
     ok: true,
     mediaBackend: (c.env.MEDIA_BACKEND ?? "r2").toLowerCase() === "b2" ? "b2" : "r2",
+    mediaPublicOrigin: Boolean(c.env.MEDIA_PUBLIC_ORIGIN?.trim()),
   }),
 )
 

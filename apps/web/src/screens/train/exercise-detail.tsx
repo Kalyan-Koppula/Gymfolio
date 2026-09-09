@@ -12,6 +12,7 @@ import { StickyActionBar } from "@/components/shared/sticky-action-bar"
 import { AddExerciseSheet } from "@/components/shared/add-exercise-sheet"
 import { useApiWrite } from "@/hooks/use-api-write"
 import { EQUIPMENT_LABELS, toSaveRoutineDays } from "@/lib/stub-data"
+import { useQueryClient } from "@tanstack/react-query"
 import { useExercises, ensureExerciseYoutube } from "@/hooks/use-exercises"
 import { getRoutine, saveRoutine } from "@/lib/api-client"
 import type { Exercise, Routine, RoutineDay } from "shared"
@@ -19,6 +20,7 @@ import type { Exercise, Routine, RoutineDay } from "shared"
 export function ExerciseDetail() {
   const navigate = useNavigate()
   const { id } = useParams()
+  const queryClient = useQueryClient()
   const { byId, loading, applyExercise } = useExercises()
   const [exercise, setExercise] = React.useState<Exercise | undefined>()
   const [routine, setRoutine] = React.useState<Routine | null | undefined>(undefined)
@@ -48,7 +50,7 @@ export function ExerciseDetail() {
     let cancelled = false
     setYoutubeFetching(true)
     setYoutubeSkip(null)
-    void ensureExerciseYoutube(id)
+    void ensureExerciseYoutube(queryClient, id)
       .then((result) => {
         if (cancelled) return
         if (result?.exercise) {
@@ -66,7 +68,7 @@ export function ExerciseDetail() {
     return () => {
       cancelled = true
     }
-  }, [id, youtubeStatus, applyExercise])
+  }, [id, youtubeStatus, applyExercise, queryClient])
 
   if (loading) {
     return (

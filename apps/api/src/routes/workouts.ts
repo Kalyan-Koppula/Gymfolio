@@ -61,6 +61,13 @@ function todayIso() {
 
 type Db = ReturnType<typeof getDb>
 
+/** Delete workout logs and their sets in two statements (not per-row). */
+async function deleteLogsWithSets(db: Db, ids: string[]) {
+  if (ids.length === 0) return
+  await db.delete(workoutLogSets).where(inArray(workoutLogSets.workoutLogId, ids))
+  await db.delete(workoutLogs).where(inArray(workoutLogs.id, ids))
+}
+
 /**
  * At most one in-progress session per user. Orphans appear from React StrictMode
  * double-mounting /start (two inserts before either can see the other).
@@ -79,13 +86,13 @@ async function abandonInProgressExcept(
   if (keepId) conditions.push(ne(workoutLogs.id, keepId))
 
   const rows = await db
-    .select()
+    .select({ id: workoutLogs.id })
     .from(workoutLogs)
     .where(and(...conditions))
-  for (const row of rows) {
-    await db.delete(workoutLogSets).where(eq(workoutLogSets.workoutLogId, row.id))
-    await db.delete(workoutLogs).where(eq(workoutLogs.id, row.id))
-  }
+  await deleteLogsWithSets(
+    db,
+    rows.map((r) => r.id),
+  )
 }
 
 /** Drop in-progress rows that are shadowed by a completed log for the same calendar slot,
@@ -93,7 +100,11 @@ async function abandonInProgressExcept(
 async function abandonStaleInProgressDuplicates(db: Db, userId: string, tenantId: string) {
   const today = todayIso()
   const open = await db
-    .select()
+    .select({
+      id: workoutLogs.id,
+      date: workoutLogs.date,
+      dayIndex: workoutLogs.dayIndex,
+    })
     .from(workoutLogs)
     .where(
       and(
@@ -102,30 +113,34 @@ async function abandonStaleInProgressDuplicates(db: Db, userId: string, tenantId
         eq(workoutLogs.status, "in_progress"),
       ),
     )
+  if (open.length === 0) return
+
+  const toDelete: string[] = []
+  const todayOpen = open.filter((r) => r.date >= today)
   for (const row of open) {
-    if (row.date < today) {
-      await db.delete(workoutLogSets).where(eq(workoutLogSets.workoutLogId, row.id))
-      await db.delete(workoutLogs).where(eq(workoutLogs.id, row.id))
-      continue
-    }
-    const [done] = await db
-      .select({ id: workoutLogs.id })
+    if (row.date < today) toDelete.push(row.id)
+  }
+
+  if (todayOpen.length > 0) {
+    const dates = [...new Set(todayOpen.map((r) => r.date))]
+    const completed = await db
+      .select({ date: workoutLogs.date, dayIndex: workoutLogs.dayIndex })
       .from(workoutLogs)
       .where(
         and(
           eq(workoutLogs.userId, userId),
           eq(workoutLogs.tenantId, tenantId),
-          eq(workoutLogs.date, row.date),
-          eq(workoutLogs.dayIndex, row.dayIndex),
           eq(workoutLogs.status, "completed"),
+          inArray(workoutLogs.date, dates),
         ),
       )
-      .limit(1)
-    if (done) {
-      await db.delete(workoutLogSets).where(eq(workoutLogSets.workoutLogId, row.id))
-      await db.delete(workoutLogs).where(eq(workoutLogs.id, row.id))
+    const done = new Set(completed.map((c) => `${c.date}:${c.dayIndex}`))
+    for (const row of todayOpen) {
+      if (done.has(`${row.date}:${row.dayIndex}`)) toDelete.push(row.id)
     }
   }
+
+  await deleteLogsWithSets(db, [...new Set(toDelete)])
 }
 
 /** Monday (UTC) of the ISO week containing `date`. */
@@ -629,6 +644,11 @@ route.get("/last-performance", async (c) => {
   const { userId, tenantId } = c.get("auth")
   const db = getDb(c.env.DB)
 
+  // Bound lookback so history growth does not unbounded-scan the join.
+  const since = new Date()
+  since.setUTCDate(since.getUTCDate() - 365)
+  const sinceIso = since.toISOString().slice(0, 10)
+
   // Newest completed sets first — group by exercise, keep every set from the newest session date.
   const rows = await db
     .select({
@@ -647,6 +667,7 @@ route.get("/last-performance", async (c) => {
         eq(workoutLogs.userId, userId),
         eq(workoutLogs.tenantId, tenantId),
         eq(workoutLogs.status, "completed"),
+        gte(workoutLogs.date, sinceIso),
         sql`coalesce(${workoutLogSets.skipped}, 0) = 0`,
       ),
     )
@@ -839,17 +860,35 @@ route.get("/for-date", async (c) => {
   const skipped = rows.find((r) => r.status === "skipped") ?? null
   const inProgress = rows.find((r) => r.status === "in_progress") ?? null
 
-  async function withSets(row: typeof workoutLogs.$inferSelect | null) {
+  const wanted = [completed, skipped, inProgress].filter(Boolean) as Array<typeof workoutLogs.$inferSelect>
+  const setsByLog = new Map<string, WorkoutLogSet[]>()
+  if (wanted.length > 0) {
+    const setRows = await db
+      .select()
+      .from(workoutLogSets)
+      .where(
+        inArray(
+          workoutLogSets.workoutLogId,
+          wanted.map((r) => r.id),
+        ),
+      )
+    for (const s of setRows) {
+      const list = setsByLog.get(s.workoutLogId) ?? []
+      list.push(toSet(s))
+      setsByLog.set(s.workoutLogId, list)
+    }
+  }
+
+  function withSets(row: typeof workoutLogs.$inferSelect | null) {
     if (!row) return null
-    const sets = await db.select().from(workoutLogSets).where(eq(workoutLogSets.workoutLogId, row.id))
-    return toLog(row, sets.map(toSet))
+    return toLog(row, setsByLog.get(row.id) ?? [])
   }
 
   return c.json({
     date,
-    completed: await withSets(completed),
-    skipped: await withSets(skipped),
-    inProgress: await withSets(inProgress),
+    completed: withSets(completed),
+    skipped: withSets(skipped),
+    inProgress: withSets(inProgress),
   })
 })
 

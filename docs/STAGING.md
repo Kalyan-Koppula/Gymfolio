@@ -43,20 +43,21 @@ pnpm staging:deploy:web
 
 `staging:seed*` uses `--staging` (remote D1 `gymfolio-d1-staging`, default media backend **b2**).
 
-### Faster media (Cloudflare edge cache + content hashes)
+### Faster media (CDN origin — no Worker byte-proxy)
 
 Object keys are **content-addressed** after seed:
 
 `exercises/{slug}/thumb.<16-hex>.webp` (also `start` / `end`)
 
-D1 stores keys in `media_json` (+ `gif_r2_key` for the thumb). Clients load those URLs, so CDN `immutable` caching is safe — a re-encode produces a new hash/URL.
+D1 stores keys in `media_json`. Prefer serving bytes from a **public CDN/origin**, not through the Worker:
 
-Thumbs are slow when every request goes **Pages → Worker → B2**. After deploy:
+| Setup | What to set |
+| --- | --- |
+| **Best (B2)** | Make the bucket (or prefix) public, put Cloudflare DNS in front (Bandwidth Alliance = free B2↔CF egress), set **`MEDIA_PUBLIC_ORIGIN`** on the Worker **and** Pages build **`VITE_MEDIA_PUBLIC_ORIGIN`** to that origin (no trailing slash). Client loads `{origin}/exercises/...` directly. |
+| **Best (R2)** | R2 custom domain or `*.r2.dev` public URL → same vars. |
+| **Fallback** | Leave public origin unset. Worker streams from B2/R2 + Cache API. Set **`VITE_MEDIA_ORIGIN`** to the Worker URL so thumbs skip the Pages `/api` proxy. |
 
-1. **API** caches media in the Workers Cache API (`X-Media-Cache: HIT` on repeats).
-2. Set Pages build env **`VITE_MEDIA_ORIGIN`** to the Worker origin (no trailing slash), e.g.  
-   `https://gymfolio-api-staging.<subdomain>.workers.dev`  
-   so the browser loads `/api/media/...` **directly from the Worker** (skips the Pages proxy hop).
+When `MEDIA_PUBLIC_ORIGIN` is set, `GET /api/media/...` returns **302** to the CDN (no image bytes through the Worker). DNS/CDN rules (CNAME + cache) do the heavy lifting — not a Worker fetch.
 
 Reseed hashed objects (local WebPs already built):
 
@@ -67,7 +68,11 @@ pnpm staging:seed:d1
 pnpm staging:deploy:api
 ```
 
-Redeploy web after setting `VITE_MEDIA_ORIGIN`.
+Redeploy web after changing `VITE_MEDIA_PUBLIC_ORIGIN` / `VITE_MEDIA_ORIGIN`.
+
+### DB query indexes
+
+Migration `0012_query_indexes` adds indexes on workout logs/sets, hydration, credentials, and users(tenant). Apply with `pnpm staging:migrate`. Workout abandon paths batch deletes; `/for-date` loads sets in one query; exercise list uses a 1h edge catalog cache.
 
 ---
 
@@ -457,7 +462,7 @@ Pages can build every PR to a unique `*.pages.dev` preview URL. Preview WebAuthn
 - [ ] Register a passkey on the **Pages** origin (localhost passkeys will not work)
 - [ ] Start / finish a workout; resume bar clears
 - [ ] Exercise media loads from staging R2 (after seed)
-- [ ] PWA name shows **Gymfolio**
+- [ ] PWA: open staging in **Safari** on iPhone → Share → Add to Home Screen (Chrome/Firefox on iOS cannot install). Name shows **Gymfolio**; opens full-screen (`navigator.standalone`).
 - [ ] Dashboard: no plaintext `MASTER_KEY` under Worker Variables
 
 ---

@@ -6,7 +6,9 @@ import { VitePWA } from 'vite-plugin-pwa'
 import { PWA_ICON_REV } from './pwa-icon-rev.js'
 
 function icon(src: string) {
-  return `${src}?v=${PWA_ICON_REV}`
+  // Absolute paths so the home-screen icon resolves from /manifest.webmanifest on iOS.
+  const path = src.startsWith('/') ? src : `/${src}`
+  return `${path}?v=${PWA_ICON_REV}`
 }
 
 // https://vite.dev/config/
@@ -45,32 +47,37 @@ export default defineConfig({
         scope: '/',
         icons: [
           {
-            src: icon('pwa-192.png'),
+            src: icon('/pwa-192.png'),
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any',
           },
           {
-            src: icon('pwa-512.png'),
+            src: icon('/pwa-512.png'),
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any',
           },
           {
-            src: icon('pwa-512-maskable.png'),
+            src: icon('/pwa-512-maskable.png'),
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',
           },
         ],
+        // Helps Chromium; iOS still uses Share → Add to Home Screen (Safari only).
+        categories: ['health', 'fitness', 'lifestyle'],
       },
       workbox: {
         // App shell for client routes only — never claim /api (Pages Function / Worker).
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
         cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
         // Don't precache the SW/workbox runtime themselves as navigations.
         globPatterns: ['**/*.{js,css,html,ico,svg,png,webp,woff2,webmanifest}'],
+        navigateFallbackAllowlist: [/^(?!\/__).*/],
         runtimeCaching: [
           {
             urlPattern: ({ url }) => {

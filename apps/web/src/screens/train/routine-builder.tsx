@@ -23,7 +23,8 @@ import { EmptyState } from "@/components/shared/empty-state"
 import { RoutineDaysEditor } from "@/components/shared/routine-days-editor"
 import { SplitPicker } from "@/components/routine/split-picker"
 import { useApiWrite } from "@/hooks/use-api-write"
-import { useAiProvider } from "@/contexts/ai-provider-context"
+import { useAiProvider } from "@/hooks/use-ai-provider"
+import { useQueryClient } from "@tanstack/react-query"
 import { getRoutine, getSettings, saveRoutine, generateRoutineAi } from "@/lib/api-client"
 import { fetchExercises } from "@/hooks/use-exercises"
 import {
@@ -43,6 +44,7 @@ import type { Routine } from "shared"
 
 export function RoutineBuilder() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { configured: aiConfigured } = useAiProvider()
 
   // undefined = still loading, null = confirmed no routine exists yet
@@ -91,7 +93,7 @@ export function RoutineBuilder() {
     try {
       const splitType = aiSplitType === "ai_choice" ? "upper_lower" : aiSplitType
       const preset = SPLIT_PRESETS.find((p) => p.id === splitType)!
-      const pool = await fetchExercises()
+      const pool = await fetchExercises(queryClient)
       const ai = await generateRoutineAi({
         splitType,
         equipment,

@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom"
 import { ChevronRight, KeyRound, Lock, Palette, ShieldCheck, Users } from "lucide-react"
 import { TopBar } from "@/components/nav/top-bar"
-import { useSession } from "@/contexts/session-context"
+import { useSession } from "@/hooks/use-session"
 
 const ITEMS = [
   { to: "/settings/ai", icon: KeyRound, label: "AI provider", desc: "Bring-your-own-key configuration" },

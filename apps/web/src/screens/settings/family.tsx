@@ -16,7 +16,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { useSession } from "@/contexts/session-context"
+import { useSession } from "@/hooks/use-session"
 import {
   listMembers,
   deactivateMember,

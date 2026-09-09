@@ -1,7 +1,7 @@
 import * as React from "react"
 import { Navigate, Outlet } from "react-router-dom"
 import { hasAccount } from "@/lib/api-client"
-import { useSession } from "@/contexts/session-context"
+import { useSession } from "@/hooks/use-session"
 
 /**
  * /onboarding is for (1) bootstrapping the first owner when no account exists yet, or

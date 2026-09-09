@@ -1,7 +1,7 @@
 import { useLocation, useNavigate } from "react-router-dom"
 import { ChevronRight, Play } from "lucide-react"
 import { TAB_BAR_CLEARANCE } from "@/components/nav/bottom-tab-bar"
-import { useWorkoutSession } from "@/contexts/workout-session-context"
+import { useWorkoutSession } from "@/hooks/use-workout-session"
 import { APP_FRAME } from "@/lib/app-frame"
 import { cn } from "@/lib/utils"
 

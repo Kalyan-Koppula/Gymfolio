@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, uniqueIndex } from "drizzle-orm/sqlite-core"
+import { sqliteTable, text, integer, real, uniqueIndex, index } from "drizzle-orm/sqlite-core"
 
 // Scoped to the Foundation pass (architecture §2) plus auth, settings, routines, workouts, theme.
 
@@ -8,17 +8,21 @@ export const tenants = sqliteTable("tenants", {
   createdAt: integer("created_at").notNull(),
 })
 
-export const users = sqliteTable("users", {
-  id: text("id").primaryKey(),
-  tenantId: text("tenant_id")
-    .notNull()
-    .references(() => tenants.id),
-  username: text("username").notNull().unique(),
-  passwordHash: text("password_hash").notNull(),
-  role: text("role").notNull().default("member"), // "owner" | "member" — exactly one owner per tenant
-  deactivatedAt: integer("deactivated_at"), // null = active; set by the owner removing a member
-  createdAt: integer("created_at").notNull(),
-})
+export const users = sqliteTable(
+  "users",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    username: text("username").notNull().unique(),
+    passwordHash: text("password_hash").notNull(),
+    role: text("role").notNull().default("member"), // "owner" | "member" — exactly one owner per tenant
+    deactivatedAt: integer("deactivated_at"), // null = active; set by the owner removing a member
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [index("users_tenant_id_idx").on(t.tenantId)],
+)
 
 export const sessions = sqliteTable(
   "sessions",
@@ -56,21 +60,25 @@ export const invites = sqliteTable("invites", {
 })
 
 // Standard WebAuthn credential storage — nothing app-specific about this shape.
-export const credentials = sqliteTable("credentials", {
-  id: text("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id),
-  credentialId: text("credential_id").notNull().unique(),
-  publicKey: text("public_key").notNull(), // base64url-encoded COSE public key bytes
-  counter: integer("counter").notNull().default(0),
-  deviceType: text("device_type"), // "singleDevice" | "multiDevice"
-  backedUp: integer("backed_up").notNull().default(0), // 0/1 — SQLite has no native boolean
-  transports: text("transports"), // JSON-encoded string[], e.g. ["internal","hybrid"]
-  label: text("label"), // e.g. "iPhone"
-  createdAt: integer("created_at").notNull(),
-  lastUsedAt: integer("last_used_at"),
-})
+export const credentials = sqliteTable(
+  "credentials",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    credentialId: text("credential_id").notNull().unique(),
+    publicKey: text("public_key").notNull(), // base64url-encoded COSE public key bytes
+    counter: integer("counter").notNull().default(0),
+    deviceType: text("device_type"), // "singleDevice" | "multiDevice"
+    backedUp: integer("backed_up").notNull().default(0), // 0/1 — SQLite has no native boolean
+    transports: text("transports"), // JSON-encoded string[], e.g. ["internal","hybrid"]
+    label: text("label"), // e.g. "iPhone"
+    createdAt: integer("created_at").notNull(),
+    lastUsedAt: integer("last_used_at"),
+  },
+  (t) => [index("credentials_user_id_idx").on(t.userId)],
+)
 
 export const bodyMetricEntries = sqliteTable(
   "body_metric_entries",
@@ -90,18 +98,22 @@ export const bodyMetricEntries = sqliteTable(
   (table) => [uniqueIndex("body_metric_entries_tenant_user_date_idx").on(table.tenantId, table.userId, table.date)],
 )
 
-export const hydrationEntries = sqliteTable("hydration_entries", {
-  id: text("id").primaryKey(),
-  tenantId: text("tenant_id")
-    .notNull()
-    .references(() => tenants.id),
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id),
-  date: text("date").notNull(),
-  amountMl: integer("amount_ml").notNull(),
-  updatedAt: integer("updated_at").notNull(),
-})
+export const hydrationEntries = sqliteTable(
+  "hydration_entries",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    date: text("date").notNull(),
+    amountMl: integer("amount_ml").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [index("hydration_entries_tenant_user_date_idx").on(table.tenantId, table.userId, table.date)],
+)
 
 export const sleepEntries = sqliteTable(
   "sleep_entries",
@@ -183,38 +195,52 @@ export const routines = sqliteTable("routines", {
 
 // One row per workout session (in progress or completed). dayIndex is the routine.days
 // position at start time so adherence / cycle advancement don't depend on label renames.
-export const workoutLogs = sqliteTable("workout_logs", {
-  id: text("id").primaryKey(),
-  tenantId: text("tenant_id")
-    .notNull()
-    .references(() => tenants.id),
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id),
-  date: text("date").notNull(), // YYYY-MM-DD
-  dayLabel: text("day_label").notNull(),
-  dayIndex: integer("day_index").notNull(),
-  status: text("status").notNull().default("in_progress"), // "in_progress" | "completed" | "skipped"
-  setsPlanned: integer("sets_planned").notNull(),
-  setsCompleted: integer("sets_completed").notNull().default(0),
-  startedAt: integer("started_at").notNull(),
-  completedAt: integer("completed_at"),
-  updatedAt: integer("updated_at").notNull(),
-})
+export const workoutLogs = sqliteTable(
+  "workout_logs",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    date: text("date").notNull(), // YYYY-MM-DD
+    dayLabel: text("day_label").notNull(),
+    dayIndex: integer("day_index").notNull(),
+    status: text("status").notNull().default("in_progress"), // "in_progress" | "completed" | "skipped"
+    setsPlanned: integer("sets_planned").notNull(),
+    setsCompleted: integer("sets_completed").notNull().default(0),
+    startedAt: integer("started_at").notNull(),
+    completedAt: integer("completed_at"),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [
+    index("workout_logs_user_tenant_date_idx").on(t.userId, t.tenantId, t.date),
+    index("workout_logs_user_tenant_status_idx").on(t.userId, t.tenantId, t.status),
+  ],
+)
 
-export const workoutLogSets = sqliteTable("workout_log_sets", {
-  id: text("id").primaryKey(),
-  workoutLogId: text("workout_log_id")
-    .notNull()
-    .references(() => workoutLogs.id),
-  exerciseId: text("exercise_id").notNull(),
-  setIndex: integer("set_index").notNull(), // 0-based within that exercise for this session
-  actualReps: integer("actual_reps").notNull(),
-  actualWeightKg: real("actual_weight_kg").notNull(),
-  /** 0/1 — skipped sets count toward session progress but not muscle/strength charts. */
-  skipped: integer("skipped").notNull().default(0),
-  updatedAt: integer("updated_at").notNull(),
-})
+export const workoutLogSets = sqliteTable(
+  "workout_log_sets",
+  {
+    id: text("id").primaryKey(),
+    workoutLogId: text("workout_log_id")
+      .notNull()
+      .references(() => workoutLogs.id),
+    exerciseId: text("exercise_id").notNull(),
+    setIndex: integer("set_index").notNull(), // 0-based within that exercise for this session
+    actualReps: integer("actual_reps").notNull(),
+    actualWeightKg: real("actual_weight_kg").notNull(),
+    /** 0/1 — skipped sets count toward session progress but not muscle/strength charts. */
+    skipped: integer("skipped").notNull().default(0),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [
+    index("workout_log_sets_log_id_idx").on(t.workoutLogId),
+    index("workout_log_sets_exercise_id_idx").on(t.exerciseId),
+  ],
+)
 
 // Shared reference data — not tenant-scoped. Seeded once; GIF/YouTube fields filled later.
 export const exercises = sqliteTable("exercises", {

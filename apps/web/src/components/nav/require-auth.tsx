@@ -1,5 +1,5 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom"
-import { useSession } from "@/contexts/session-context"
+import { useSession } from "@/hooks/use-session"
 
 /** Layout route — renders its nested routes only with a valid session, otherwise bounces to
  * /login and remembers where the visitor was headed so login can send them back. */

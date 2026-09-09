@@ -10,6 +10,7 @@ import { SplitPicker } from "@/components/routine/split-picker"
 import { SchedulePicker } from "@/components/routine/schedule-picker"
 import { useScheduleState } from "@/hooks/use-schedule-state"
 import { useApiWrite } from "@/hooks/use-api-write"
+import { useQueryClient } from "@tanstack/react-query"
 import { getSettings, saveRoutine } from "@/lib/api-client"
 import { fetchExercises } from "@/hooks/use-exercises"
 import {
@@ -26,6 +27,7 @@ const STEPS = ["Choose a split", "Schedule", "Review & edit days"]
 
 export function RoutineWizard() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [step, setStep] = React.useState(0)
   const [splitType, setSplitType] = React.useState<SplitType | null>(null)
   const [equipment, setEquipment] = React.useState<Equipment[]>([])
@@ -45,7 +47,7 @@ export function RoutineWizard() {
 
   async function seedDays() {
     if (!splitType) return
-    const pool = await fetchExercises()
+    const pool = await fetchExercises(queryClient)
     let gear = equipment
     if (gear.length === 0) {
       try {

@@ -2,7 +2,7 @@ import * as React from "react"
 import { startAuthentication, browserSupportsWebAuthn } from "@simplewebauthn/browser"
 import { Delete, Fingerprint, Loader2, LogOut, Shield } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { useSession } from "@/contexts/session-context"
+import { useSession } from "@/hooks/use-session"
 import { logout, passkeyUnlockOptions, passkeyUnlockVerify, ApiError, listPasskeys } from "@/lib/api-client"
 import { getPreferredPasskey, rememberPasskey } from "@/lib/passkey-preference"
 import {

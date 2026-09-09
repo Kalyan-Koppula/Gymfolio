@@ -1,4 +1,5 @@
 import { Hono } from "hono"
+import type { Context } from "hono"
 import { eq } from "drizzle-orm"
 import { exercises } from "db"
 import { ExerciseSchema, type Exercise, type Equipment, type MuscleGroup } from "shared"
@@ -14,6 +15,10 @@ import type { AppEnv } from "../types.ts"
 
 const route = new Hono<AppEnv>()
 route.use(requireAuth)
+
+/** Edge cache for the full catalog (filters still run in-process on the cached payload). */
+const CATALOG_CACHE_URL = "https://gymfolio.internal/exercises-catalog-v1"
+const CATALOG_CACHE_TTL_SECONDS = 3600
 
 function parseMediaJson(raw: string | null): Exercise["media"] | undefined {
   if (!raw) return undefined
@@ -54,25 +59,55 @@ function toExercise(row: typeof exercises.$inferSelect): Exercise {
   })
 }
 
-route.get("/", async (c) => {
+async function invalidateCatalogCache(ctx: Context<AppEnv>) {
+  ctx.executionCtx.waitUntil(caches.default.delete(new Request(CATALOG_CACHE_URL)))
+}
+
+async function loadCatalog(c: Context<AppEnv>): Promise<Exercise[]> {
+  const cache = caches.default
+  const cacheKey = new Request(CATALOG_CACHE_URL)
+  const hit = await cache.match(cacheKey)
+  if (hit) {
+    try {
+      const body = (await hit.json()) as { exercises: Exercise[] }
+      if (Array.isArray(body.exercises)) return body.exercises
+    } catch {
+      /* fall through */
+    }
+  }
+
   const db = getDb(c.env.DB)
+  const rows = await db.select().from(exercises)
+  const list = rows.map(toExercise)
+
+  const response = new Response(JSON.stringify({ exercises: list }), {
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": `public, max-age=${CATALOG_CACHE_TTL_SECONDS}`,
+    },
+  })
+  c.executionCtx.waitUntil(cache.put(cacheKey, response.clone()))
+  return list
+}
+
+route.get("/", async (c) => {
   const q = c.req.query("q")?.trim().toLowerCase()
   const muscle = c.req.query("muscle")
   const equipment = c.req.query("equipment")
 
-  let rows = await db.select().from(exercises)
+  let list = await loadCatalog(c)
 
   if (q) {
-    rows = rows.filter((r) => r.name.toLowerCase().includes(q))
+    list = list.filter((r) => r.name.toLowerCase().includes(q))
   }
   if (muscle) {
-    rows = rows.filter((r) => (JSON.parse(r.muscleGroupsJson) as string[]).includes(muscle))
+    list = list.filter((r) => r.muscleGroups.includes(muscle as MuscleGroup))
   }
   if (equipment) {
-    rows = rows.filter((r) => (JSON.parse(r.equipmentJson) as string[]).includes(equipment))
+    list = list.filter((r) => r.equipment.includes(equipment as Equipment))
   }
 
-  return c.json({ exercises: rows.map(toExercise), total: rows.length })
+  return c.json({ exercises: list, total: list.length })
 })
 
 route.get("/:id", async (c) => {
@@ -118,6 +153,7 @@ route.post("/:id/youtube", async (c) => {
       .update(exercises)
       .set({ youtubeStatus: "not_fetched", youtubeJson: null })
       .where(eq(exercises.id, id))
+    invalidateCatalogCache(c)
     const [updated] = await db.select().from(exercises).where(eq(exercises.id, id)).limit(1)
     return c.json({ exercise: toExercise(updated!), skipped: "not_found" as const })
   }
@@ -130,6 +166,7 @@ route.post("/:id/youtube", async (c) => {
     })
     .where(eq(exercises.id, id))
 
+  invalidateCatalogCache(c)
   const [updated] = await db.select().from(exercises).where(eq(exercises.id, id)).limit(1)
   return c.json({ exercise: toExercise(updated!) })
 })

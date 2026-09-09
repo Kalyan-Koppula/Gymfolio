@@ -1,0 +1,23 @@
+/**
+ * Cloudflare Pages headers for PWA install / SW reliability (esp. iOS Safari).
+ * Without these, Cached SW or wrong manifest MIME can block install / updates.
+ */
+/sw.js
+  Cache-Control: public, max-age=0, must-revalidate
+  Content-Type: application/javascript; charset=utf-8
+  Service-Worker-Allowed: /
+
+/registerSW.js
+  Cache-Control: public, max-age=0, must-revalidate
+  Content-Type: application/javascript; charset=utf-8
+
+/workbox-*.js
+  Cache-Control: public, max-age=0, must-revalidate
+
+/manifest.webmanifest
+  Content-Type: application/manifest+json; charset=utf-8
+  Cache-Control: public, max-age=0, must-revalidate
+
+/apple-touch-icon.png
+  Cache-Control: public, max-age=86400
+  Content-Type: image/png

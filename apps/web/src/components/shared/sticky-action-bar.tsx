@@ -3,7 +3,7 @@ import { createPortal } from "react-dom"
 import { useLocation } from "react-router-dom"
 import { TAB_BAR_CLEARANCE } from "@/components/nav/bottom-tab-bar"
 import { RESUME_BAR_HEIGHT } from "@/components/nav/workout-resume-bar"
-import { useOptionalWorkoutSession } from "@/contexts/workout-session-context"
+import { useOptionalWorkoutSession } from "@/hooks/use-workout-session"
 import { APP_FRAME } from "@/lib/app-frame"
 import { cn } from "@/lib/utils"
 
@@ -17,7 +17,7 @@ export function StickyActionBar({ children, className }: { children: React.React
   const location = useLocation()
   const session = useOptionalWorkoutSession()
   const fullScreen = FULL_SCREEN_PATHS.includes(location.pathname)
-  const showResumeBar = Boolean(session?.workout) && !fullScreen
+  const showResumeBar = Boolean(session.workout) && !fullScreen
 
   const bottom = fullScreen
     ? "var(--safe-bottom)"

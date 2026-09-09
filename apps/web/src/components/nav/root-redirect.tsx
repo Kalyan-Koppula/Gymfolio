@@ -1,7 +1,7 @@
 import * as React from "react"
 import { Navigate } from "react-router-dom"
 import { hasAccount } from "@/lib/api-client"
-import { useSession } from "@/contexts/session-context"
+import { useSession } from "@/hooks/use-session"
 
 /**
  * `/` decides where a fresh open belongs.

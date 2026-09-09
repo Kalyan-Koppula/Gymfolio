@@ -85,6 +85,13 @@
       "when": 1787669200000,
       "tag": "0011_session_device_key",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1787669300000,
+      "tag": "0012_query_indexes",
+      "breakpoints": true
     }
   ]
 }

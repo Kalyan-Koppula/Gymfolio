@@ -1,6 +1,9 @@
 /**
  * Exercise media object store — Cloudflare R2 (binding) or Backblaze B2 (S3-compatible).
  * Selected by env.MEDIA_BACKEND = "r2" | "b2" (default "r2").
+ *
+ * When MEDIA_PUBLIC_ORIGIN is set (public CDN / R2 custom domain / B2 friendly URL),
+ * clients and `/api/media` redirects use that origin so the Worker never streams bytes.
  */
 import { AwsClient } from "aws4fetch"
 import type { Bindings } from "../types.ts"
@@ -17,6 +20,19 @@ export type MediaStore = {
 function backendOf(env: Bindings): "r2" | "b2" {
   const raw = (env.MEDIA_BACKEND ?? "r2").trim().toLowerCase()
   return raw === "b2" ? "b2" : "r2"
+}
+
+/** Public CDN/origin base — objects must be readable at `{origin}/{objectKey}`. */
+export function mediaPublicOrigin(env: Bindings): string | null {
+  const raw = env.MEDIA_PUBLIC_ORIGIN?.trim().replace(/\/$/, "")
+  return raw || null
+}
+
+export function publicMediaObjectUrl(env: Bindings, key: string): string | null {
+  const origin = mediaPublicOrigin(env)
+  if (!origin) return null
+  const path = key.split("/").map(encodeURIComponent).join("/")
+  return `${origin}/${path}`
 }
 
 function createR2Store(env: Bindings): MediaStore | null {

@@ -22,7 +22,7 @@ import {
   skipWorkout,
 } from "@/lib/api-client"
 import { useExercises } from "@/hooks/use-exercises"
-import { useWorkoutSession } from "@/contexts/workout-session-context"
+import { useWorkoutSession } from "@/hooks/use-workout-session"
 import type { UserSettings, Routine, WorkoutSessionSummary, WorkoutLog } from "shared"
 import { activeDays, describeSchedule } from "@/lib/stub-data"
 

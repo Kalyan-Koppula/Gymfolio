@@ -4,30 +4,26 @@ import { ThemeProvider as ModeProvider } from 'next-themes'
 import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.tsx'
-import { AppearanceProvider } from '@/contexts/appearance-provider'
-import { AiProviderProvider } from '@/contexts/ai-provider-context'
-import { SessionProvider } from '@/contexts/session-context'
+import { AppProviders } from '@/providers/app-providers'
+import { AppearanceBootstrap } from '@/hooks/use-appearance'
 import { AppLockProvider } from '@/contexts/app-lock-context'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ModeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-      <SessionProvider>
+    <AppProviders>
+      <ModeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+        <AppearanceBootstrap />
         <AppLockProvider>
-          <AppearanceProvider>
-            <AiProviderProvider>
-              <TooltipProvider>
-                <BrowserRouter>
-                  <App />
-                </BrowserRouter>
-                <Toaster position="top-center" />
-              </TooltipProvider>
-            </AiProviderProvider>
-          </AppearanceProvider>
+          <TooltipProvider>
+            <BrowserRouter>
+              <App />
+            </BrowserRouter>
+            <Toaster position="top-center" />
+          </TooltipProvider>
         </AppLockProvider>
-      </SessionProvider>
-    </ModeProvider>
+      </ModeProvider>
+    </AppProviders>
   </StrictMode>,
 )

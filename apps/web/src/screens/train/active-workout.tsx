@@ -23,7 +23,7 @@ import {
   logWorkoutSet,
   startWorkout,
 } from "@/lib/api-client"
-import { useWorkoutSession } from "@/contexts/workout-session-context"
+import { useWorkoutSession } from "@/hooks/use-workout-session"
 import { activeDays, suggestedWeightKg, type RoutineDay } from "@/lib/stub-data"
 import type { LastPerformance, Routine } from "shared"
 

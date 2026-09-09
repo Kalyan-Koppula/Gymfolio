@@ -26,6 +26,12 @@ export type Bindings = {
   B2_ENDPOINT?: string
   /** Optional; inferred from B2_ENDPOINT when omitted. */
   B2_REGION?: string
+  /**
+   * Public CDN / object origin (no trailing slash). Objects must be readable at
+   * `{MEDIA_PUBLIC_ORIGIN}/{objectKey}`. When set, `/api/media` 302s instead of
+   * streaming — use R2 custom domain, r2.dev, or B2+Cloudflare CDN / friendly URL.
+   */
+  MEDIA_PUBLIC_ORIGIN?: string
 }
 
 export type AuthContext = {

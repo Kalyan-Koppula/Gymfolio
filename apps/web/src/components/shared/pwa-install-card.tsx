@@ -1,9 +1,9 @@
 import { Share, SquarePlus, X } from "lucide-react"
-import * as React from "react"
+import { useAtom } from "jotai"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { pwaInstallDismissedAtAtom } from "@/atoms/ui"
 
-const STORAGE_KEY = "gymfolio:pwa-install-dismissed-at"
 const SNOOZE_MS = 30 * 24 * 60 * 60 * 1000
 
 function isRunningInstalled(): boolean {
@@ -14,43 +14,30 @@ function isRunningInstalled(): boolean {
   return nav.standalone === true
 }
 
-function isSnoozed(): boolean {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return false
-    const dismissedAt = Number(raw)
-    if (!Number.isFinite(dismissedAt)) return false
-    return Date.now() - dismissedAt < SNOOZE_MS
-  } catch {
-    return false
-  }
+function isIosSafari(): boolean {
+  const ua = navigator.userAgent
+  const iOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  const webkit = /WebKit/.test(ua)
+  const chromeOrCriOS = /CriOS|FxiOS|EdgiOS|OPiOS|Chrome/.test(ua)
+  return iOS && webkit && !chromeOrCriOS
 }
 
 /**
  * §3.15 — instructional "Add to Home Screen" card.
  * Never shown when already installed; after dismiss, snoozed for 30 days.
+ * iPhone: must use Safari (Chrome/Firefox on iOS cannot install PWAs).
  */
 export function PwaInstallCard() {
-  const [visible, setVisible] = React.useState(false)
+  const [dismissedAt, setDismissedAt] = useAtom(pwaInstallDismissedAtAtom)
 
-  React.useEffect(() => {
-    if (isRunningInstalled()) {
-      setVisible(false)
-      return
-    }
-    setVisible(!isSnoozed())
-  }, [])
-
-  if (!visible) return null
+  if (isRunningInstalled()) return null
+  if (dismissedAt != null && Date.now() - dismissedAt < SNOOZE_MS) return null
 
   function dismiss() {
-    try {
-      localStorage.setItem(STORAGE_KEY, String(Date.now()))
-    } catch {
-      // ignore quota / private mode
-    }
-    setVisible(false)
+    setDismissedAt(Date.now())
   }
+
+  const ios = typeof navigator !== "undefined" && isIosSafari()
 
   return (
     <Card className="relative border-primary/30 bg-primary/5 py-4">
@@ -70,10 +57,21 @@ export function PwaInstallCard() {
         <div className="space-y-1.5 text-sm">
           <p className="font-medium">Install Gymfolio for gym use</p>
           <p className="text-muted-foreground">
-            Tap <Share className="inline size-3.5 -translate-y-0.5" aria-label="Share icon" /> in
-            Safari's toolbar, then <span className="font-medium text-foreground">Add to Home Screen</span>.
-            It opens full-screen; the service worker caches the app shell and exercise library for
-            offline browsing (writes still need a connection).
+            {ios ? (
+              <>
+                In <span className="font-medium text-foreground">Safari</span> (not Chrome), tap{" "}
+                <Share className="inline size-3.5 -translate-y-0.5" aria-label="Share icon" /> then{" "}
+                <span className="font-medium text-foreground">Add to Home Screen</span>. Opens
+                full-screen; the app shell stays available offline.
+              </>
+            ) : (
+              <>
+                Tap <Share className="inline size-3.5 -translate-y-0.5" aria-label="Share icon" /> in
+                the browser toolbar, then{" "}
+                <span className="font-medium text-foreground">Add to Home Screen</span>. Opens
+                full-screen; the app shell stays available offline (writes still need a connection).
+              </>
+            )}
           </p>
         </div>
       </CardContent>

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useOnlineStatus } from "@/hooks/use-online-status"
-import { useSession } from "@/contexts/session-context"
+import { useSession } from "@/hooks/use-session"
 import { APP_NAME } from "@/lib/brand"
 import { validateInvite, register, passkeyRegisterOptions, passkeyRegisterVerify, ApiError } from "@/lib/api-client"
 

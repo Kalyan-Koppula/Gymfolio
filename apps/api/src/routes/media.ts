@@ -1,16 +1,18 @@
 /**
- * Serves exercise media bytes from the configured store (R2 or Backblaze B2).
+ * Serves exercise media.
  *
- * Preferred keys are content-addressed:
- *   exercises/{slug}/{thumb|start|end}.{16-hex}.webp
- * Legacy unhashed keys still work for older objects.
+ * Preferred: set MEDIA_PUBLIC_ORIGIN to a public CDN/origin where objects are
+ * readable at `{origin}/{key}` (R2 custom domain / r2.dev, or B2 + Cloudflare CDN /
+ * public friendly URL). Then this Worker only issues a 302 — no byte proxy, no
+ * Worker egress of image bodies.
  *
- * Responses are stored in the Cloudflare Cache API so repeat requests are served from
- * the edge CDN instead of re-fetching B2/R2 on every hit.
+ * Fallback: stream from R2/B2 through the Worker + Cache API (legacy private buckets).
+ *
+ * Content-addressed keys: exercises/{slug}/{thumb|start|end}.{16-hex}.webp
  */
 import { Hono } from "hono"
 import type { Context } from "hono"
-import { getMediaStore } from "../lib/media-store.ts"
+import { getMediaStore, publicMediaObjectUrl } from "../lib/media-store.ts"
 import type { AppEnv } from "../types.ts"
 
 const route = new Hono<AppEnv>()
@@ -35,6 +37,12 @@ async function serveMedia(
   fallbackType: string,
   cacheControl: string,
 ) {
+  // Prefer CDN/DNS-level origin: Worker never touches object bytes.
+  const publicUrl = publicMediaObjectUrl(c.env, key)
+  if (publicUrl) {
+    return c.redirect(publicUrl, 302)
+  }
+
   const requestUrl = new URL(c.req.url)
   const cacheKey = new Request(new URL(requestUrl.pathname, requestUrl.origin).toString(), {
     method: "GET",
@@ -55,8 +63,8 @@ async function serveMedia(
         error: "Media storage not configured",
         hint:
           c.env.MEDIA_BACKEND === "b2"
-            ? "Set B2_KEY_ID, B2_APPLICATION_KEY, B2_BUCKET, B2_ENDPOINT (Worker secrets / .dev.vars)"
-            : "Bind MEDIA (R2) or set MEDIA_BACKEND=b2 with Backblaze credentials",
+            ? "Set B2_KEY_ID, B2_APPLICATION_KEY, B2_BUCKET, B2_ENDPOINT (Worker secrets / .dev.vars) — or MEDIA_PUBLIC_ORIGIN for CDN redirects"
+            : "Bind MEDIA (R2) or set MEDIA_BACKEND=b2 with Backblaze credentials — or MEDIA_PUBLIC_ORIGIN for CDN redirects",
       },
       503,
     )

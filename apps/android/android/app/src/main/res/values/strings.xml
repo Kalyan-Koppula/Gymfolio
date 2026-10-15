@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Gymfolio</string>
+    <string name="title_activity_main">Gymfolio</string>
+    <string name="package_name">app.gymfolio.android</string>
+    <string name="custom_url_scheme">app.gymfolio.android</string>
+    <string name="app_function_user_description">Gymfolio — log workouts, hydration, and daily training status via on-device AI.</string>
+</resources>

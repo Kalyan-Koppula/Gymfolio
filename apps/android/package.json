@@ -1,0 +1,19 @@
+{
+  "name": "android",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "sync": "node ./scripts/sync.mjs",
+    "merge-native": "node ./scripts/merge-native.mjs",
+    "open": "npx cap open android",
+    "build:web": "pnpm --filter web build"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.3",
+    "@capacitor/core": "^7.4.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.3"
+  }
+}

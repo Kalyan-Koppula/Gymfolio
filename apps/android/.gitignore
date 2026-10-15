@@ -1,0 +1,16 @@
+# Capacitor / Android
+node_modules/
+www/.capacitor/
+.capacitor/
+android/.gradle/
+android/**/build/
+android/local.properties
+android/captures/
+android/.idea/
+*.iml
+*.keystore
+*.jks
+*.apk
+*.aab
+Gymfolio-debug.apk
+.DS_Store

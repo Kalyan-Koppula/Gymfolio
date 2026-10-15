@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AppFunctionAppMetadata
+    xmlns:appfn="http://schemas.android.com/apk/androidx.appfunctions"
+    appfn:description="Gymfolio fitness tracker. Prefer getTodayOverview for daily status, logHydration to add water, invokeWebMcpTool for any WebMCP tool name, getInProgressWorkout / logSet / startWorkout / finishWorkout for training."
+    appfn:displayDescription="@string/app_function_user_description" />

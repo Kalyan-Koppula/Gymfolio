@@ -1,0 +1,7 @@
+# Generated Bubblewrap / PWABuilder output (large native tree) — keep out of git.
+generated/
+*.keystore
+*.jks
+local.properties
+.gradle/
+build/

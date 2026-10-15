@@ -3,6 +3,7 @@ import { BottomTabBar, TAB_BAR_CLEARANCE } from "@/components/nav/bottom-tab-bar
 import { PageTransition } from "@/components/nav/page-transition"
 import { RESUME_BAR_HEIGHT, WorkoutResumeBar } from "@/components/nav/workout-resume-bar"
 import { useWorkoutSession } from "@/hooks/use-workout-session"
+import { GymfolioWebMcp } from "@/webmcp/GymfolioWebMcp"
 import { APP_FRAME } from "@/lib/app-frame"
 import { cn } from "@/lib/utils"
 
@@ -17,6 +18,7 @@ export function AppShell() {
   if (fullScreen) {
     return (
       <div className="min-h-svh w-full bg-background md:bg-muted/25">
+        <GymfolioWebMcp />
         <div className={cn("flex min-h-svh flex-col bg-background", APP_FRAME)}>
           <PageTransition />
         </div>
@@ -29,6 +31,7 @@ export function AppShell() {
 
   return (
     <div className="min-h-svh w-full bg-background md:bg-muted/25">
+      <GymfolioWebMcp />
       <div className={cn("flex min-h-svh flex-col bg-background md:shadow-sm", APP_FRAME)}>
         <div className="flex-1" style={{ paddingBottom: clearance }}>
           <PageTransition />
